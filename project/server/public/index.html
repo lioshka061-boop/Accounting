@@ -2,8 +2,10 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8">
-  <title>Облікова Панель</title>
+  <title>Головна</title>
   <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script defer src="/main.js"></script>
 </head>
 
 <body>
@@ -12,13 +14,97 @@
   <h2>Облік</h2>
 
   <a href="/orders.html">Замовлення</a>
+  <a href="/create-order.html">Нове замовлення</a>
   <a href="/suppliers.html">Постачальники</a>
   <a href="/stats.html">Статистика</a>
+  <a href="/index.html" class="active">Головна</a>
 </div>
 
 <div class="content">
-  <h1>Ласкаво просимо</h1>
-  <p>Оберіть розділ у меню зліва.</p>
+  <h1>Денний дашборд</h1>
+  <p class="subtitle">Швидкий огляд плану та продажів за сьогодні.</p>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="flex-row" style="align-items:flex-start;">
+      <div style="flex:1; min-width:240px;">
+        <label>План на день, грн</label>
+        <div class="flex-row gap-sm">
+          <input type="number" id="plan-target" value="3000" style="max-width:160px;">
+          <button id="plan-refresh">Оновити</button>
+        </div>
+        <div class="flex-row gap-sm" style="margin-top:8px;">
+          <label style="margin:0;">Вихідні:</label>
+          <label><input type="checkbox" class="weekend-toggle" value="6"> Субота</label>
+          <label><input type="checkbox" class="weekend-toggle" value="0" checked> Неділя</label>
+        </div>
+      </div>
+      <div class="plan-cards" style="flex:3;">
+        <div class="mini-card">
+          <div class="mini-title">Продажі сьогодні</div>
+          <div class="mini-value" id="today-revenue">0 ₴</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-title">Чистий прибуток</div>
+          <div class="mini-value" id="today-profit">0 ₴</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-title">Замовлень</div>
+          <div class="mini-value" id="today-count">0</div>
+        </div>
+        <div class="mini-card highlight">
+          <div class="mini-title">Залишок до плану</div>
+          <div class="mini-value" id="today-remaining">0 ₴</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-title">Недобір попередніх днів</div>
+          <div class="mini-value" id="plan-shortfall">0 ₴</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-title">Очікуваний дохід місяць</div>
+          <div class="mini-value" id="month-expected">0 ₴</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-title">Фактичний дохід</div>
+          <div class="mini-value" id="month-revenue">0 ₴</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-title">Фактичний прибуток</div>
+          <div class="mini-value" id="month-profit">0 ₴</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-title">Замовлень (місяць)</div>
+          <div class="mini-value" id="month-orders">0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>Виручка по днях</h3>
+      <canvas id="daily-revenue-chart" height="220"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Джерела сьогодні</h3>
+      <ul id="today-sources" class="source-list"></ul>
+    </div>
+  </div>
+
+  <div class="table-box" style="margin-top:12px;">
+    <table id="daily-table">
+      <thead>
+        <tr>
+          <th>Дата</th>
+          <th>Виручка</th>
+          <th>Прибуток</th>
+          <th>Маржа %</th>
+          <th>Замовлень</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
 </div>
 
 </body>

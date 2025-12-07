@@ -14,8 +14,9 @@
   <h2>Облік</h2>
 
   <a href="/orders.html">Замовлення</a>
+  <a href="/create-order.html">Нове замовлення</a>
   <a href="/suppliers.html">Постачальники</a>
-  <a href="/stats.html">Статистика</a>
+  <a href="/stats.html" class="active">Статистика</a>
   <a href="/index.html">Головна</a>
 </div>
 
@@ -44,39 +45,102 @@
       <p id="you-owe-suppliers">0 ₴</p>
     </div>
 
+    <div class="stat-card">
+      <h3>Маржа (всього)</h3>
+      <p id="total-margin">0 %</p>
+    </div>
+
   </div>
 
-  <h2>Графік прибутку</h2>
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>Динаміка прибутку</h3>
+      <canvas id="profit-chart" height="220"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Виручка vs Прибуток</h3>
+      <canvas id="revenue-chart" height="220"></canvas>
+    </div>
+  </div>
 
-  <canvas id="profit-chart" width="600" height="300"></canvas>
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>Маржа по місяцях</h3>
+      <canvas id="margin-chart" height="220"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Місячні показники</h3>
+      <canvas id="monthly-chart" height="220"></canvas>
+    </div>
+  </div>
+
+  <div class="chart-card wide">
+    <h3>Баланс постачальників</h3>
+    <canvas id="suppliers-chart" height="220"></canvas>
+  </div>
+
+  <div class="chart-card wide">
+    <h3>Маржа постачальників</h3>
+    <canvas id="suppliers-perf-chart" height="220"></canvas>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <div class="flex-row">
+      <div style="flex:1;">
+        <h3>План на день</h3>
+        <div class="flex-row gap-sm">
+          <label style="margin:0;">Ціль, грн</label>
+          <input type="number" id="plan-target" value="3000" style="max-width:160px;" />
+          <button id="plan-refresh">Оновити</button>
+        </div>
+      </div>
+      <div class="plan-cards">
+        <div class="mini-card">
+          <div class="mini-title">Продажі сьогодні</div>
+          <div class="mini-value" id="today-revenue">0 ₴</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-title">Чистий прибуток</div>
+          <div class="mini-value" id="today-profit">0 ₴</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-title">Замовлень</div>
+          <div class="mini-value" id="today-count">0</div>
+        </div>
+        <div class="mini-card highlight">
+          <div class="mini-title">Залишок до плану</div>
+          <div class="mini-value" id="today-remaining">0 ₴</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-title">Недобір попередніх днів</div>
+          <div class="mini-value" id="plan-shortfall">0 ₴</div>
+        </div>
+      </div>
+    </div>
+    <div class="flex-row">
+      <div style="flex:1;">
+        <h4 style="margin:12px 0 8px;">Джерела сьогодні</h4>
+        <ul id="today-sources" class="source-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-box" style="margin-top:12px;">
+    <table id="daily-table">
+      <thead>
+        <tr>
+          <th>Дата</th>
+          <th>Виручка</th>
+          <th>Прибуток</th>
+          <th>Маржа %</th>
+          <th>Замовлень</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
 </div>
-
-<style>
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
-  margin-bottom: 40px;
-}
-
-.stat-card {
-  background: white;
-  padding: 20px;
-  border-radius: 10px;
-  border: 1px solid #e5e5e5;
-}
-
-.stat-card h3 {
-  margin: 0 0 10px;
-}
-
-.stat-card p {
-  font-size: 22px;
-  font-weight: 700;
-  margin: 0;
-}
-</style>
 
 </body>
 </html>
