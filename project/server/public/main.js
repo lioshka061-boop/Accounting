@@ -6,9 +6,19 @@ let chartSuppliers;
 let chartMargin;
 let chartMonthly;
 let chartSuppliersPerf;
+let monthlySummaryData = [];
 let dailyDataCache = null;
 let chartDaily;
 let currentWeekends = new Set([0]); // 0 = Sunday
+
+const STATUS_COLORS = {
+  "Прийнято": "pill-blue",
+  "Виконано": "pill-green",
+  "Під замовлення": "pill-orange",
+  "Відмова": "pill-red",
+  "Повернення": "pill-amber",
+  "Скасовано": "pill-grey"
+};
 
 // ===================================================================
 // ==================== LOAD SUPPLIERS (SELECT+FILTER) =================
@@ -145,6 +155,47 @@ async function adjustSupplier() {
 }
 
 // ===================================================================
+// ====================== QUICK STATUS UPDATE ========================
+// ===================================================================
+async function quickStatus(id, status) {
+  try {
+    const order = ALL_ORDERS.find(o => o.id === id);
+    if (!order) throw new Error("order not found");
+
+    const payload = {
+      order_number: order.order_number,
+      title: order.title,
+      note: order.note,
+      date: order.date,
+      sale: order.sale,
+      cost: order.cost,
+      prosail: order.prosail,
+      prepay: order.prepay,
+      supplier_id: order.supplier_id,
+      promoPay: !!order.promoPay,
+      ourTTN: !!order.ourTTN,
+      fromSupplier: !!order.fromSupplier,
+      isReturn: !!order.isReturn,
+      returnDelivery: order.returnDelivery,
+      traffic_source: order.traffic_source,
+      status,
+      cancel_reason: order.cancel_reason || ""
+    };
+
+    const res = await fetch(`${API}/orders/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    showSuccess("Статус оновлено");
+    loadOrders();
+  } catch (err) {
+    alert("Не вдалося оновити статус");
+  }
+}
+
+// ===================================================================
 // ========================= SUCCESS MESSAGE ===========================
 // ===================================================================
 function showSuccess(msg) {
@@ -214,9 +265,11 @@ async function loadOrders() {
 
 function renderOrders(orders) {
   const table = document.querySelector("#orders-table tbody");
+  const cards = document.getElementById("orders-cards");
   if (!table) return;
 
   table.innerHTML = "";
+  if (cards) cards.innerHTML = "";
 
   orders.forEach(o => {
     const debt =
@@ -226,6 +279,7 @@ function renderOrders(orders) {
 
     const isReturnBadge = o.isReturn ? `<div style="color:#ff9f43;font-weight:700;font-size:12px;">Повернення</div>` : "";
     const statusBadge = o.status ? `<div style="color:#9fb4ff;font-weight:600;font-size:12px;">${o.status}</div>` : "";
+    const statusClass = STATUS_COLORS[o.status] || "pill-blue";
 
     const row = document.createElement("tr");
     if (o.isReturn) row.classList.add("row-return");
@@ -235,7 +289,17 @@ function renderOrders(orders) {
       <td>${o.date || "-"}</td>
       <td>${o.title || "-"} ${isReturnBadge}</td>
       <td>${o.traffic_source || "-"}</td>
-      <td>${statusBadge}</td>
+      <td>
+        <div class="status-pill ${statusClass}">${o.status || "Прийнято"}</div>
+        <select class="status-select" onchange="quickStatus(${o.id}, this.value)">
+          <option value="Прийнято" ${o.status==="Прийнято"?"selected":""}>Прийнято</option>
+          <option value="Виконано" ${o.status==="Виконано"?"selected":""}>Виконано</option>
+          <option value="Під замовлення" ${o.status==="Під замовлення"?"selected":""}>Під замовлення</option>
+          <option value="Відмова" ${o.status==="Відмова"?"selected":""}>Відмова</option>
+          <option value="Повернення" ${o.status==="Повернення"?"selected":""}>Повернення</option>
+          <option value="Скасовано" ${o.status==="Скасовано"?"selected":""}>Скасовано</option>
+        </select>
+      </td>
       <td>${MONEY(o.sale)} грн</td>
       <td>${MONEY(o.cost)} грн</td>
       <td>${MONEY(o.prosail)} грн</td>
@@ -249,6 +313,30 @@ function renderOrders(orders) {
       </td>
     `;
     table.appendChild(row);
+
+    if (cards) {
+      const card = document.createElement("div");
+      card.className = "order-card";
+      card.innerHTML = `
+        <div class="row"><span class="label">Номер:</span><span>${o.order_number || "-"}</span></div>
+        <div class="row"><span class="label">Дата:</span><span>${o.date || "-"}</span></div>
+        <div class="row"><span class="label">Назва:</span><span>${o.title || "-"}</span></div>
+        <div class="row"><span class="label">Трафік:</span><span>${o.traffic_source || "-"}</span></div>
+        <div class="row"><span class="label">Статус:</span><span>${o.status || "-"}</span></div>
+        <div class="row"><span class="label">Продаж:</span><span>${MONEY(o.sale)} грн</span></div>
+        <div class="row"><span class="label">Опт:</span><span>${MONEY(o.cost)} грн</span></div>
+        <div class="row"><span class="label">ProSale:</span><span>${MONEY(o.prosail)} грн</span></div>
+        <div class="row"><span class="label">Передплата:</span><span>${MONEY(o.prepay)} грн</span></div>
+        <div class="row"><span class="label">Постачальник:</span><span>${o.supplier_name || "-"}</span></div>
+        <div class="row"><span class="label">Баланс:</span><span>${debt}</span></div>
+        <div class="row"><span class="label">Прибуток:</span><span>${MONEY(o.profit)} грн</span></div>
+        <div class="row" style="justify-content:flex-start; gap:8px; margin-top:8px;">
+          <button onclick="openEditModal(${o.id})">✏️</button>
+          <button class="danger" onclick="deleteOrder(${o.id})">🗑</button>
+        </div>
+      `;
+      cards.appendChild(card);
+    }
   });
 }
 
@@ -427,11 +515,13 @@ function applyFilters() {
   const title = document.getElementById("filter-title").value.toLowerCase();
   const supplier = document.getElementById("filter-supplier").value;
   const showReturns = document.getElementById("filter-returns").checked;
+  const status = document.getElementById("filter-status")?.value || "";
 
   let filtered = ALL_ORDERS.filter(o => {
     if (num && !(o.order_number || "").toLowerCase().includes(num)) return false;
     if (title && !(o.title || "").toLowerCase().includes(title)) return false;
     if (supplier && o.supplier_id != supplier) return false;
+    if (status && o.status !== status) return false;
     if (!showReturns && o.isReturn) return false;
     return true;
   });
@@ -467,6 +557,7 @@ async function loadStats() {
     const totalProfitEl = document.getElementById("total-profit");
     const oweYouEl = document.getElementById("suppliers-owe-you");
     const youOweEl = document.getElementById("you-owe-suppliers");
+    const avgCheckEl = document.getElementById("avg-check");
 
     const marginPercent = revenue.totalSales ? (profit.totalProfit / revenue.totalSales) * 100 : 0;
 
@@ -476,14 +567,21 @@ async function loadStats() {
     if (youOweEl) youOweEl.textContent = `${MONEY(debts.weOwe)} ₴`;
     const totalMarginEl = document.getElementById("total-margin");
     if (totalMarginEl) totalMarginEl.textContent = `${marginPercent.toFixed(2)} %`;
+    if (avgCheckEl && series.overall) avgCheckEl.textContent = `${MONEY(series.overall.avgCheck)} ₴`;
 
     renderCharts(series);
+    monthlySummaryData = series.monthly || [];
+    renderMonthlySummary();
   } catch (err) {
     console.error("Помилка статистики:", err);
   }
 }
 
 function renderCharts(series) {
+  if (typeof Chart === "undefined") {
+    console.warn("Chart.js not loaded");
+    return;
+  }
   const { revenueProfit = [], suppliers = [], monthly = [], suppliersPerf = [] } = series || {};
 
   const labels = revenueProfit.map(r => r.label);
@@ -656,7 +754,55 @@ function renderCharts(series) {
       }
     });
   }
+
+  renderMonthlySummary();
 }
+
+function renderMonthlySummary() {
+  const table = document.querySelector("#monthly-summary tbody");
+  if (!table) return;
+  table.innerHTML = "";
+  (monthlySummaryData || []).forEach(m => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${m.label}</td>
+      <td>${MONEY(m.revenue)} ₴</td>
+      <td>${MONEY(m.profit)} ₴</td>
+      <td>${m.orders}</td>
+      <td>${MONEY(m.avgCheck)} ₴</td>
+      <td>${m.margin.toFixed(2)} %</td>
+    `;
+    table.appendChild(tr);
+  });
+}
+
+async function saveManualMonth() {
+  const month = document.getElementById("manual-month")?.value;
+  const revenue = Number(document.getElementById("manual-revenue")?.value);
+  const profit = Number(document.getElementById("manual-profit")?.value);
+  const orders = Number(document.getElementById("manual-orders")?.value);
+
+  if (!month) {
+    alert("Вкажіть місяць");
+    return;
+  }
+
+  await fetch(`${API}/stats/manual-months`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ month, revenue, profit, orders })
+  });
+
+  loadStats();
+}
+
+function toggleSidebar(forceState) {
+  const body = document.body;
+  const shouldOpen = typeof forceState === "boolean" ? forceState : !body.classList.contains("sidebar-open");
+  if (shouldOpen) body.classList.add("sidebar-open");
+  else body.classList.remove("sidebar-open");
+}
+
 
 // ===================================================================
 // ========================= DAILY / PLAN =============================
@@ -794,6 +940,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const planInput = document.getElementById("plan-target");
     const refreshBtn = document.getElementById("plan-refresh");
     const weekendToggles = document.querySelectorAll(".weekend-toggle");
+    const manualSave = document.getElementById("manual-save");
 
     const load = () => {
       const plan = Number(planInput?.value) || 3000;
@@ -809,6 +956,18 @@ window.addEventListener("DOMContentLoaded", () => {
         load();
       });
     });
+    if (manualSave) {
+      manualSave.addEventListener("click", saveManualMonth);
+    }
     load();
   }
+
+  document.querySelectorAll('.burger-btn').forEach(btn => {
+    btn.addEventListener('click', () => toggleSidebar());
+  });
+  document.querySelectorAll('.sidebar a').forEach(a => {
+    a.addEventListener('click', () => toggleSidebar(false));
+  });
+  const backdrop = document.querySelector('.sidebar-backdrop');
+  if (backdrop) backdrop.addEventListener('click', () => toggleSidebar(false));
 });

@@ -9,6 +9,11 @@
 
 <body>
 
+<div class="mobile-header">
+  <button class="burger-btn">☰</button>
+  <div class="mobile-title">Замовлення</div>
+  <button class="burger-btn" onclick="window.location='/create-order.html'">+ Нове</button>
+</div>
 <div class="sidebar">
   <h2>Облік</h2>
   <a href="/orders.html" class="active">Замовлення</a>
@@ -17,6 +22,7 @@
   <a href="/stats.html">Статистика</a>
   <a href="/index.html">Головна</a>
 </div>
+<div class="sidebar-backdrop"></div>
 
 <div class="content">
   <h1>Список замовлень</h1>
@@ -25,6 +31,15 @@
     <input type="text" id="filter-number" placeholder="Пошук по номеру" />
     <input type="text" id="filter-title" placeholder="Пошук по назві" />
     <select id="filter-supplier"><option value="">Всі постачальники</option></select>
+    <select id="filter-status">
+      <option value="">Всі статуси</option>
+      <option value="Прийнято">Прийнято</option>
+      <option value="Виконано">Виконано</option>
+      <option value="Під замовлення">Під замовлення</option>
+      <option value="Відмова">Відмова</option>
+      <option value="Повернення">Повернення</option>
+      <option value="Скасовано">Скасовано</option>
+    </select>
     <label><input type="checkbox" id="filter-returns" /> Показувати повернення</label>
 
     <button onclick="applyFilters()">Фільтрувати</button>
@@ -54,6 +69,7 @@
       <tbody></tbody>
     </table>
   </div>
+  <div id="orders-cards" class="cards-list"></div>
 </div>
 
 <!-- MODAL -->

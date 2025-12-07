@@ -92,6 +92,7 @@ async function initDB() {
   `);
 
   await ensureOrderColumns(db);
+  await ensureManualMonths(db);
   await normalizeExistingOrders(db);
   return db;
 }
@@ -317,6 +318,18 @@ async function ensureOrderColumns(db) {
   for (const stmt of alters) {
     await db.exec(`ALTER TABLE orders ${stmt}`);
   }
+}
+
+async function ensureManualMonths(db) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS manual_months (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      month TEXT NOT NULL UNIQUE,
+      revenue REAL DEFAULT 0,
+      profit REAL DEFAULT 0,
+      orders INTEGER DEFAULT 0
+    );
+  `);
 }
 
 // =========================
@@ -623,12 +636,12 @@ app.get("/api/stats/daily", async (req, res) => {
     if (d >= todayStr) continue;
     const day = new Date(d);
     if (weekendSet.has(day.getDay())) continue;
-    const revenue = byDate.get(d).revenue;
-    shortfall += Math.max(0, planTarget - revenue);
+    const profit = byDate.get(d).profit;
+    shortfall += Math.max(0, planTarget - profit);
   }
 
   const todayData = byDate.get(todayStr) || { revenue: 0, profit: 0, count: 0, sources: {} };
-  const todayRemaining = Math.max(0, planTarget - todayData.revenue + shortfall);
+  const todayRemaining = Math.max(0, planTarget - todayData.profit + shortfall);
 
   // Monthly summary
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -694,14 +707,30 @@ app.get("/api/stats/series", async (req, res) => {
     ORDER BY date ASC
   `);
 
-  const monthly = await req.db.all(`
+  const monthlyActual = await req.db.all(`
     SELECT strftime('%Y-%m', date) AS label,
            COALESCE(SUM(sale), 0) AS revenue,
-           COALESCE(SUM(profit), 0) AS profit
+           COALESCE(SUM(profit), 0) AS profit,
+           COUNT(*) AS orders
     FROM orders
     GROUP BY strftime('%Y-%m', date)
     ORDER BY label ASC
   `);
+
+  const manualMonths = await req.db.all(`
+    SELECT month AS label, revenue, profit, orders
+    FROM manual_months
+    ORDER BY month ASC
+  `);
+
+  const monthlyMap = new Map();
+  for (const m of monthlyActual) {
+    monthlyMap.set(m.label, { ...m });
+  }
+  for (const m of manualMonths) {
+    monthlyMap.set(m.label, { ...m });
+  }
+  const monthly = Array.from(monthlyMap.values()).sort((a, b) => a.label.localeCompare(b.label));
 
   const suppliers = await req.db.all(`
     SELECT name, balance
@@ -720,6 +749,9 @@ app.get("/api/stats/series", async (req, res) => {
     ORDER BY profit DESC
   `);
 
+  const totalsRow = await req.db.get(`SELECT COALESCE(SUM(sale),0) AS revenue, COALESCE(SUM(profit),0) AS profit, COUNT(*) AS orders FROM orders`);
+  const overallAvgCheck = totalsRow.orders ? round2(totalsRow.revenue / totalsRow.orders) : 0;
+
   res.json({
     revenueProfit: revenueProfit.map(r => ({
       label: r.label,
@@ -730,6 +762,8 @@ app.get("/api/stats/series", async (req, res) => {
       label: m.label,
       revenue: round2(m.revenue),
       profit: round2(m.profit),
+      orders: m.orders,
+      avgCheck: m.orders ? round2(m.revenue / m.orders) : 0,
       margin: round2(m.revenue ? (m.profit / m.revenue) * 100 : 0)
     })),
     suppliers: suppliers.map(s => ({ name: s.name, balance: round2(s.balance) })),
@@ -738,8 +772,41 @@ app.get("/api/stats/series", async (req, res) => {
       revenue: round2(s.revenue),
       profit: round2(s.profit),
       margin: round2(s.revenue ? (s.profit / s.revenue) * 100 : 0)
-    }))
+    })),
+    overall: {
+      revenue: round2(totalsRow.revenue),
+      profit: round2(totalsRow.profit),
+      orders: totalsRow.orders,
+      avgCheck: overallAvgCheck
+    }
   });
+});
+
+// Manual monthly entries
+app.get("/api/stats/manual-months", async (req, res) => {
+  const rows = await req.db.all("SELECT * FROM manual_months ORDER BY month DESC");
+  res.json(rows);
+});
+
+app.post("/api/stats/manual-months", async (req, res) => {
+  try {
+    const { month, revenue, profit, orders } = req.body;
+    if (!month) return res.status(400).json({ error: "month required" });
+    const rev = toNumber(revenue);
+    const prof = toNumber(profit);
+    const ord = Number.isInteger(orders) ? orders : Number(orders) || 0;
+
+    await req.db.run(
+      `INSERT INTO manual_months (month, revenue, profit, orders)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(month) DO UPDATE SET revenue=excluded.revenue, profit=excluded.profit, orders=excluded.orders`,
+      [month, rev, prof, ord]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("MANUAL MONTH ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // fallback

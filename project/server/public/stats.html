@@ -4,12 +4,16 @@
   <meta charset="UTF-8">
   <title>Статистика</title>
   <link rel="stylesheet" href="/styles.css">
-  <script defer src="/main.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script defer src="/main.js"></script>
 </head>
 
 <body>
 
+<div class="mobile-header">
+  <button class="burger-btn">☰</button>
+  <div class="mobile-title">Статистика</div>
+</div>
 <div class="sidebar">
   <h2>Облік</h2>
 
@@ -19,6 +23,7 @@
   <a href="/stats.html" class="active">Статистика</a>
   <a href="/index.html">Головна</a>
 </div>
+<div class="sidebar-backdrop"></div>
 
 <div class="content">
   <h1>Статистика</h1>
@@ -82,6 +87,47 @@
   <div class="chart-card wide">
     <h3>Маржа постачальників</h3>
     <canvas id="suppliers-perf-chart" height="220"></canvas>
+  </div>
+
+  <div class="table-box" style="margin-top:12px;">
+    <table id="monthly-summary">
+      <thead>
+        <tr>
+          <th>Місяць</th>
+          <th>Оборот</th>
+          <th>Чистий прибуток</th>
+          <th>Замовлень</th>
+          <th>Середній чек</th>
+          <th>Маржа %</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <h3>Додати дані за місяць</h3>
+    <div class="flex-row gap-sm" style="margin-top:8px; flex-wrap:wrap;">
+      <div>
+        <label>Місяць</label>
+        <input type="month" id="manual-month" style="max-width:180px;">
+      </div>
+      <div>
+        <label>Оборот (₴)</label>
+        <input type="number" id="manual-revenue" placeholder="0" style="max-width:140px;">
+      </div>
+      <div>
+        <label>Чистий прибуток (₴)</label>
+        <input type="number" id="manual-profit" placeholder="0" style="max-width:140px;">
+      </div>
+      <div>
+        <label>Замовлень</label>
+        <input type="number" id="manual-orders" placeholder="0" style="max-width:120px;">
+      </div>
+      <div style="align-self:flex-end;">
+        <button id="manual-save">Зберегти</button>
+      </div>
+    </div>
   </div>
 
   <div class="card" style="margin-top:16px;">
