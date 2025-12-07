@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <title>Постачальники</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script defer src="/main.js"></script>
+</head>
+
+<body>
+
+<div class="sidebar">
+  <h2>Облік</h2>
+
+  <a href="/orders.html">Замовлення</a>
+  <a href="/suppliers.html">Постачальники</a>
+  <a href="/stats.html">Статистика</a>
+  <a href="/index.html">Головна</a>
+</div>
+
+<div class="content">
+  <h1>Постачальники</h1>
+
+  <h3>Додати постачальника</h3>
+
+  <label>Назва постачальника</label>
+  <input type="text" id="supplier-name" placeholder="Наприклад: OP-Tuning">
+
+  <button onclick="addSupplier()">Додати</button>
+
+  <h3>Список постачальників</h3>
+
+  <div class="table-box">
+    <table id="suppliers-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Назва</th>
+          <th>Баланс</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+</div>
+
+</body>
+</html>

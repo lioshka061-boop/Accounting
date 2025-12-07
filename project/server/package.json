@@ -1,0 +1,16 @@
+{
+  "name": "accounting-server",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "sqlite3": "^5.1.6",
+    "sqlite": "^5.1.1",
+    "cors": "^2.8.5",
+    "body-parser": "^1.20.2"
+  }
+}
