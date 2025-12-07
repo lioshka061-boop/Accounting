@@ -1,98 +1,163 @@
+/* ===== GLOBAL DARK THEME ===== */
 body {
   margin: 0;
-  background: #f2f3f7;
-  font-family: Inter, sans-serif;
+  background: #0e0f11;
+  color: #e2e2e2;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
   display: flex;
-  min-height: 100vh;
 }
 
+/* ===== SIDEBAR ===== */
 .sidebar {
   width: 240px;
-  background: white;
-  border-right: 1px solid #e5e5e5;
-  padding: 24px;
+  background: #141518;
+  height: 100vh;
+  padding: 25px;
   box-sizing: border-box;
+  border-right: 1px solid #1f1f1f;
 }
 
 .sidebar h2 {
-  margin: 0 0 20px;
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #fff;
   font-size: 22px;
-  font-weight: 700;
 }
 
 .sidebar a {
   display: block;
-  padding: 12px 14px;
-  margin-bottom: 10px;
+  padding: 14px;
+  background: #1e1f23;
+  color: #ccc;
   text-decoration: none;
-  color: #333;
-  background: #f7f7f7;
-  border-radius: 8px;
-  transition: 0.2s;
-  font-weight: 500;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  transition: .2s;
+  font-size: 15px;
 }
 
 .sidebar a:hover {
-  background: #dfe3ff;
+  background: #2a2b30;
 }
 
+.sidebar a.active {
+  background: #4a67ff;
+  color: white;
+}
+
+/* ===== CONTENT AREA ===== */
 .content {
-  flex-grow: 1;
-  padding: 40px;
-  box-sizing: border-box;
+  flex: 1;
+  padding: 35px 45px;
 }
 
-.content h1 {
-  font-size: 28px;
+h1 {
+  margin-top: 0;
+  font-size: 32px;
   font-weight: 700;
+  color: white;
+}
+
+/* ===== FILTERS ===== */
+.filters {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
 }
 
 input, select {
-  width: 100%;
-  padding: 10px;
-  margin: 8px 0 16px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  font-size: 15px;
+  background: #1a1c1f;
+  border: 1px solid #2c2c2c;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: white;
+  min-width: 180px;
+}
+
+input::placeholder {
+  color: #777;
 }
 
 button {
-  padding: 12px 20px;
-  background: #4a67ff;
+  padding: 10px 16px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
+  background: #4a67ff;
   color: white;
-  font-size: 15px;
   cursor: pointer;
-  transition: 0.2s;
+  transition: .2s;
 }
 
 button:hover {
-  background: #2b47e6;
+  opacity: .85;
 }
 
-.table-box {
-  margin-top: 20px;
-  width: 100%;
-  overflow-x: auto;
+button.danger {
+  background: #ff4a4a;
 }
 
+button.danger:hover {
+  background: #d73838;
+}
+
+/* ===== TABLE ===== */
 table {
   width: 100%;
   border-collapse: collapse;
-  background: white;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-table th, table td {
-  padding: 12px 15px;
-  border-bottom: 1px solid #eee;
-  text-align: left;
+  margin-top: 10px;
   font-size: 14px;
 }
 
-table th {
-  background: #f6f6f6;
-  font-weight: 600;
+thead tr {
+  background: #1a1c20;
+  color: white;
 }
+
+thead th {
+  padding: 14px;
+  text-align: left;
+}
+
+tbody tr {
+  background: #131416;
+  border-bottom: 1px solid #1f1f1f;
+}
+
+tbody tr:hover {
+  background: #1a1c20;
+}
+
+tbody td {
+  padding: 14px;
+}
+
+/* ===== MODAL ===== */
+.modal.hidden {
+  display: none;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.modal-content {
+  background: #1e1f23;
+  padding: 25px;
+  width: 460px;
+  border-radius: 12px;
+  box-shadow: 0 0 25px rgba(0,0,0,0.3);
+  color: white;
+}
+
+.modal-content input,
+.modal-content select {
+  width: 100%;
+}
+

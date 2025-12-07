@@ -1,70 +1,57 @@
 const API = "/api";
 
-// ===============================
-// ======== ADD SUPPLIER =========
-// ===============================
-async function addSupplier() {
-  const input = document.getElementById("supplier-name");
-  const name = input.value.trim();
-
-  if (!name) {
-    alert("Введи назву постачальника!");
-    return;
-  }
-
-  try {
-    const res = await fetch(`${API}/suppliers`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name })
-    });
-
-    if (!res.ok) {
-      console.error("Помилка:", await res.text());
-      alert("Не вдалося додати постачальника");
-      return;
-    }
-
-    input.value = "";
-    loadSuppliers();
-
-  } catch (err) {
-    console.error("Fetch error:", err);
-  }
-}
-
-// ===============================
-// ======== LOAD SUPPLIERS =======
-// ===============================
+// ===================================================================
+// ==================== LOAD SUPPLIERS (SELECT+FILTER) =================
+// ===================================================================
 async function loadSuppliers() {
   try {
     const res = await fetch(`${API}/suppliers`);
     const suppliers = await res.json();
 
-    const select = document.getElementById("order-supplier");
+    const createSelect = document.getElementById("order-supplier");
+    const editSelect = document.getElementById("edit-supplier");
+    const filterSelect = document.getElementById("filter-supplier");
     const table = document.querySelector("#suppliers-table tbody");
 
-    // Заповнення селекту (orders page)
-    if (select) {
-      select.innerHTML = "";
+    if (createSelect) {
+      createSelect.innerHTML = "";
       suppliers.forEach(s => {
-        const opt = document.createElement("option");
+        let opt = document.createElement("option");
         opt.value = s.id;
-        opt.textContent = `${s.name} (баланс: ${s.balance} грн)`;
-        select.appendChild(opt);
+        opt.textContent = s.name;
+        createSelect.appendChild(opt);
       });
     }
 
-    // Таблиця постачальників
+    if (editSelect) {
+      editSelect.innerHTML = "";
+      suppliers.forEach(s => {
+        let opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = s.name;
+        editSelect.appendChild(opt);
+      });
+    }
+
+    if (filterSelect) {
+      filterSelect.innerHTML = `<option value="">Всі постачальники</option>`;
+      suppliers.forEach(s => {
+        let opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = s.name;
+        filterSelect.appendChild(opt);
+      });
+    }
+
     if (table) {
       table.innerHTML = "";
       suppliers.forEach(s => {
+        const row = document.createElement("tr");
         const status =
           s.balance > 0 ? `Він нам винен ${s.balance} грн` :
           s.balance < 0 ? `Ми винні ${Math.abs(s.balance)} грн` :
           "0 грн";
 
-        const row = document.createElement("tr");
         row.innerHTML = `
           <td>${s.id}</td>
           <td>${s.name}</td>
@@ -79,56 +66,116 @@ async function loadSuppliers() {
   }
 }
 
-// ===============================
-// ======== LOAD ORDERS ==========
-// ===============================
+// ===================================================================
+// ========================= SUCCESS MESSAGE ===========================
+// ===================================================================
+function showSuccess(msg) {
+  let box = document.getElementById("success-box");
+
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "success-box";
+    box.style.position = "fixed";
+    box.style.top = "20px";
+    box.style.right = "20px";
+    box.style.padding = "12px 18px";
+    box.style.background = "#4CAF50";
+    box.style.color = "#fff";
+    box.style.borderRadius = "8px";
+    box.style.fontSize = "16px";
+    box.style.zIndex = 9999;
+    document.body.appendChild(box);
+  }
+
+  box.textContent = msg;
+  box.style.display = "block";
+
+  setTimeout(() => {
+    box.style.display = "none";
+  }, 2000);
+}
+
+// ===================================================================
+// ========================= RESET CREATE FORM ========================
+// ===================================================================
+function resetCreateForm() {
+  const fields = [
+    "order-number", "order-title", "order-note",
+    "order-date", "order-sale", "order-cost",
+    "order-prosail", "order-prepay"
+  ];
+
+  fields.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+
+  document.getElementById("promoPay").checked = false;
+  document.getElementById("ourTTN").checked = false;
+  document.getElementById("fromSupplier").checked = false;
+
+  document.getElementById("order-number").focus();
+}
+
+// ===================================================================
+// ========================= LOAD ORDERS ===============================
+// ===================================================================
+let ALL_ORDERS = [];
+
 async function loadOrders() {
   try {
     const res = await fetch(`${API}/orders`);
     const orders = await res.json();
-
-    const table = document.querySelector("#orders-table tbody");
-    if (!table) return;
-
-    table.innerHTML = "";
-
-    orders.forEach(o => {
-      const debt =
-        o.supplier_balance > 0 ? `Він нам: ${o.supplier_balance}` :
-        o.supplier_balance < 0 ? `Ми винні: ${Math.abs(o.supplier_balance)}` :
-        "0";
-
-      const row = document.createElement("tr");
-      row.innerHTML = `
-        <td>${o.id}</td>
-        <td>${o.order_number || "-"}</td>
-        <td>${o.date || "-"}</td>
-        <td>${o.title || "-"}</td>
-        <td>${o.sale} грн</td>
-        <td>${o.cost} грн</td>
-        <td>${o.prosail} грн</td>
-        <td>${o.prepay} грн</td>
-        <td>${o.supplier_id || "-"}</td>
-        <td>${debt}</td>
-        <td>${o.profit} грн</td>
-      `;
-      table.appendChild(row);
-    });
-
+    ALL_ORDERS = orders;
+    renderOrders(orders);
   } catch (err) {
-    console.error("Помилка замовлень:", err);
+    console.error("Помилка завантаження замовлень:", err);
   }
 }
 
-// ===============================
-// ========= ADD ORDER ===========
-// ===============================
+function renderOrders(orders) {
+  const table = document.querySelector("#orders-table tbody");
+  if (!table) return;
+
+  table.innerHTML = "";
+
+  orders.forEach(o => {
+    const debt =
+      o.supplier_balance > 0 ? `Він нам: ${o.supplier_balance}` :
+      o.supplier_balance < 0 ? `Ми винні: ${Math.abs(o.supplier_balance)}` :
+      "0";
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${o.id}</td>
+      <td>${o.order_number || "-"}</td>
+      <td>${o.date || "-"}</td>
+      <td>${o.title || "-"}</td>
+      <td>${o.sale} грн</td>
+      <td>${o.cost} грн</td>
+      <td>${o.prosail} грн</td>
+      <td>${o.prepay} грн</td>
+      <td>${o.supplier_name || "-"}</td>
+      <td>${debt}</td>
+      <td>${o.profit} грн</td>
+      <td>
+        <button onclick="openEditModal(${o.id})">✏️</button>
+        <button class="danger" onclick="deleteOrder(${o.id})">🗑</button>
+      </td>
+    `;
+    table.appendChild(row);
+  });
+}
+
+// ===================================================================
+// ============================= ADD ORDER ============================
+// ===================================================================
 async function addOrder() {
   const order_number = document.getElementById("order-number").value;
   const title = document.getElementById("order-title").value;
   const note = document.getElementById("order-note").value;
-
   const date = document.getElementById("order-date").value;
+
   const sale = Number(document.getElementById("order-sale").value);
   const cost = Number(document.getElementById("order-cost").value);
   const prosail = Number(document.getElementById("order-prosail").value);
@@ -140,15 +187,15 @@ async function addOrder() {
   const ourTTN = document.getElementById("ourTTN").checked;
   const fromSupplier = document.getElementById("fromSupplier").checked;
 
-  const isReturn = false;
-  const returnDelivery = 0;
+  const isReturn = document.getElementById("isReturn")?.checked || false;
+  const returnDelivery = Number(document.getElementById("returnDelivery")?.value || 0);
 
   if (!sale || !date) {
     alert("Вартість та дата — обов'язкові!");
     return;
   }
 
-  await fetch(`${API}/orders`, {
+  const res = await fetch(`${API}/orders`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -169,59 +216,118 @@ async function addOrder() {
     })
   });
 
+  if (!res.ok) {
+    alert("Помилка створення замовлення!");
+    return;
+  }
+
+  showSuccess("Замовлення успішно створено!");
+  resetCreateForm();
+}
+
+// ===================================================================
+// ========================= EDIT ORDER ===============================
+// ===================================================================
+async function openEditModal(id) {
+  const res = await fetch(`${API}/orders/${id}`);
+  const data = await res.json();
+
+  document.getElementById("edit-id").value = data.id;
+  document.getElementById("edit-number").value = data.order_number || "";
+  document.getElementById("edit-title").value = data.title || "";
+  document.getElementById("edit-note").value = data.note || "";
+  document.getElementById("edit-date").value = data.date || "";
+  document.getElementById("edit-sale").value = data.sale;
+  document.getElementById("edit-cost").value = data.cost;
+  document.getElementById("edit-prosail").value = data.prosail;
+  document.getElementById("edit-prepay").value = data.prepay;
+
+  document.getElementById("edit-supplier").value = data.supplier_id;
+
+  document.getElementById("edit-promoPay").checked = !!data.promoPay;
+  document.getElementById("edit-ourTTN").checked = !!data.ourTTN;
+  document.getElementById("edit-fromSupplier").checked = !!data.fromSupplier;
+
+  document.getElementById("edit-return").checked = data.isReturn;
+  document.getElementById("edit-returnDelivery").value = data.returnDelivery;
+
+  document.getElementById("edit-modal").classList.remove("hidden");
+}
+
+async function saveEditedOrder() {
+  const id = document.getElementById("edit-id").value;
+
+  const payload = {
+    order_number: document.getElementById("edit-number").value,
+    title: document.getElementById("edit-title").value,
+    note: document.getElementById("edit-note").value,
+    date: document.getElementById("edit-date").value,
+    sale: Number(document.getElementById("edit-sale").value),
+    cost: Number(document.getElementById("edit-cost").value),
+    prosail: Number(document.getElementById("edit-prosail").value),
+    prepay: Number(document.getElementById("edit-prepay").value),
+    supplier_id: Number(document.getElementById("edit-supplier").value),
+    promoPay: document.getElementById("edit-promoPay").checked,
+    ourTTN: document.getElementById("edit-ourTTN").checked,
+    fromSupplier: document.getElementById("edit-fromSupplier").checked,
+    isReturn: document.getElementById("edit-return").checked,
+    returnDelivery: Number(document.getElementById("edit-returnDelivery").value)
+  };
+
+  await fetch(`${API}/orders/${id}`, {
+    method: "PUT",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  closeModal();
   loadOrders();
 }
 
-// ===============================
-// ========= LOAD STATS ==========
-// ===============================
-async function loadStats() {
-  const ordersRes = await fetch(`${API}/orders`);
-  const orders = await ordersRes.json();
-
-  let turnover = 0;
-  let profit = 0;
-  let suppliers_owe = 0;
-  let we_owe = 0;
-
-  orders.forEach(o => {
-    turnover += o.sale || 0;
-    profit += o.profit || 0;
-    if (o.supplier_balance > 0) suppliers_owe += o.supplier_balance;
-    if (o.supplier_balance < 0) we_owe += Math.abs(o.supplier_balance);
-  });
-
-  const totalSales = document.getElementById("total-sales");
-  const totalProfit = document.getElementById("total-profit");
-  const suppliersOweYou = document.getElementById("suppliers-owe-you");
-  const youOweSuppliers = document.getElementById("you-owe-suppliers");
-
-  if (totalSales) totalSales.textContent = `${turnover} грн`;
-  if (totalProfit) totalProfit.textContent = `${profit} грн`;
-  if (suppliersOweYou) suppliersOweYou.textContent = `${suppliers_owe} грн`;
-  if (youOweSuppliers) youOweSuppliers.textContent = `${we_owe} грн`;
-
-  if (document.getElementById("profit-chart")) {
-    new Chart(document.getElementById("profit-chart"), {
-      type: "line",
-      data: {
-        labels: orders.map(o => o.date),
-        datasets: [{
-          label: "Прибуток",
-          data: orders.map(o => o.profit),
-          borderColor: "#4a67ff",
-          backgroundColor: "rgba(74,103,255,0.2)",
-          borderWidth: 2,
-          tension: 0.2
-        }]
-      }
-    });
-  }
+function closeModal() {
+  document.getElementById("edit-modal").classList.add("hidden");
 }
 
-// ===============================
-// ====== PAGE AUTOLOAD ==========
-// ===============================
+// ===================================================================
+// ========================== DELETE ORDER ============================
+// ===================================================================
+async function deleteOrder(id) {
+  if (!confirm("Точно видалити це замовлення?")) return;
+  await fetch(`${API}/orders/${id}`, { method: "DELETE" });
+  loadOrders();
+}
+
+// ===================================================================
+// =============================== FILTERS ============================
+// ===================================================================
+function applyFilters() {
+  const num = document.getElementById("filter-number").value.toLowerCase();
+  const title = document.getElementById("filter-title").value.toLowerCase();
+  const supplier = document.getElementById("filter-supplier").value;
+  const showReturns = document.getElementById("filter-returns").checked;
+
+  let filtered = ALL_ORDERS.filter(o => {
+    if (num && !(o.order_number || "").toLowerCase().includes(num)) return false;
+    if (title && !(o.title || "").toLowerCase().includes(title)) return false;
+    if (supplier && o.supplier_id != supplier) return false;
+    if (!showReturns && o.isReturn) return false;
+    return true;
+  });
+
+  renderOrders(filtered);
+}
+
+function resetFilters() {
+  document.getElementById("filter-number").value = "";
+  document.getElementById("filter-title").value = "";
+  document.getElementById("filter-supplier").value = "";
+  document.getElementById("filter-returns").checked = false;
+  renderOrders(ALL_ORDERS);
+}
+
+// ===================================================================
+// ============================= PAGE LOAD ============================
+// ===================================================================
 window.addEventListener("DOMContentLoaded", () => {
   if (document.getElementById("orders-table")) {
     loadSuppliers();
@@ -232,7 +338,8 @@ window.addEventListener("DOMContentLoaded", () => {
     loadSuppliers();
   }
 
-  if (document.getElementById("profit-chart")) {
-    loadStats();
+  // СТОРІНКА СТВОРЕННЯ ЗАМОВЛЕННЯ
+  if (document.getElementById("order-supplier")) {
+    loadSuppliers();
   }
 });
