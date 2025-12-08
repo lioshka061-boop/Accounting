@@ -20,6 +20,15 @@ const STATUS_COLORS = {
   "Скасовано": "pill-grey"
 };
 
+const getRangeParams = (startId, endId) => {
+  const start = document.getElementById(startId)?.value || "";
+  const end = document.getElementById(endId)?.value || "";
+  const params = new URLSearchParams();
+  if (start) params.append("start", start);
+  if (end) params.append("end", end);
+  return params;
+};
+
 // ===================================================================
 // ==================== LOAD SUPPLIERS (SELECT+FILTER) =================
 // ===================================================================
@@ -252,12 +261,18 @@ function resetCreateForm() {
 // ===================================================================
 let ALL_ORDERS = [];
 
-async function loadOrders() {
+async function loadOrders(applyFilter = false) {
   try {
-    const res = await fetch(`${API}/orders`);
+    const rangeParams = getRangeParams("filter-start", "filter-end");
+    const query = rangeParams.toString();
+    const res = await fetch(`${API}/orders${query ? `?${query}` : ""}`);
     const orders = await res.json();
     ALL_ORDERS = orders;
-    renderOrders(orders);
+    if (applyFilter) {
+      filterAndRender();
+    } else {
+      renderOrders(orders);
+    }
   } catch (err) {
     console.error("Помилка завантаження замовлень:", err);
   }
@@ -510,12 +525,14 @@ async function deleteOrder(id) {
 // ===================================================================
 // =============================== FILTERS ============================
 // ===================================================================
-function applyFilters() {
+function filterAndRender() {
   const num = document.getElementById("filter-number").value.toLowerCase();
   const title = document.getElementById("filter-title").value.toLowerCase();
   const supplier = document.getElementById("filter-supplier").value;
   const showReturns = document.getElementById("filter-returns").checked;
   const status = document.getElementById("filter-status")?.value || "";
+  const start = document.getElementById("filter-start")?.value;
+  const end = document.getElementById("filter-end")?.value;
 
   let filtered = ALL_ORDERS.filter(o => {
     if (num && !(o.order_number || "").toLowerCase().includes(num)) return false;
@@ -523,10 +540,16 @@ function applyFilters() {
     if (supplier && o.supplier_id != supplier) return false;
     if (status && o.status !== status) return false;
     if (!showReturns && o.isReturn) return false;
+    if (start && (!o.date || o.date < start)) return false;
+    if (end && (!o.date || o.date > end)) return false;
     return true;
   });
 
   renderOrders(filtered);
+}
+
+async function applyFilters() {
+  await loadOrders(true);
 }
 
 function resetFilters() {
@@ -534,7 +557,12 @@ function resetFilters() {
   document.getElementById("filter-title").value = "";
   document.getElementById("filter-supplier").value = "";
   document.getElementById("filter-returns").checked = false;
-  renderOrders(ALL_ORDERS);
+  document.getElementById("filter-status").value = "";
+  const fs = document.getElementById("filter-start");
+  const fe = document.getElementById("filter-end");
+  if (fs) fs.value = "";
+  if (fe) fe.value = "";
+  loadOrders();
 }
 
 // ===================================================================
@@ -542,11 +570,14 @@ function resetFilters() {
 // ===================================================================
 async function loadStats() {
   try {
+    const rangeParams = getRangeParams("stats-start", "stats-end");
+    const qs = rangeParams.toString();
+    const suffix = qs ? `?${qs}` : "";
     const [revRes, profitRes, debtRes, seriesRes] = await Promise.all([
-      fetch(`${API}/stats/revenue`),
-      fetch(`${API}/stats/profit`),
-      fetch(`${API}/stats/debts`),
-      fetch(`${API}/stats/series`)
+      fetch(`${API}/stats/revenue${suffix}`),
+      fetch(`${API}/stats/profit${suffix}`),
+      fetch(`${API}/stats/debts${suffix}`),
+      fetch(`${API}/stats/series${suffix}`)
     ]);
     const revenue = await revRes.json();
     const profit = await profitRes.json();
@@ -810,7 +841,11 @@ function toggleSidebar(forceState) {
 async function loadDaily(plan) {
   try {
     const weekends = Array.from(currentWeekends).join(",");
-    const res = await fetch(`${API}/stats/daily?plan=${plan}&weekends=${weekends}`);
+    const rangeParams = getRangeParams("stats-start", "stats-end");
+    rangeParams.append("plan", plan);
+    rangeParams.append("weekends", weekends);
+    const qs = rangeParams.toString();
+    const res = await fetch(`${API}/stats/daily?${qs}`);
     const data = await res.json();
     dailyDataCache = data;
     renderDaily(data);
@@ -941,6 +976,8 @@ window.addEventListener("DOMContentLoaded", () => {
     const refreshBtn = document.getElementById("plan-refresh");
     const weekendToggles = document.querySelectorAll(".weekend-toggle");
     const manualSave = document.getElementById("manual-save");
+    const statsApply = document.getElementById("stats-apply");
+    const statsReset = document.getElementById("stats-reset");
 
     const load = () => {
       const plan = Number(planInput?.value) || 3000;
@@ -958,6 +995,22 @@ window.addEventListener("DOMContentLoaded", () => {
     });
     if (manualSave) {
       manualSave.addEventListener("click", saveManualMonth);
+    }
+    if (statsApply) {
+      statsApply.addEventListener("click", () => {
+        loadStats();
+        load();
+      });
+    }
+    if (statsReset) {
+      statsReset.addEventListener("click", () => {
+        const s = document.getElementById("stats-start");
+        const e = document.getElementById("stats-end");
+        if (s) s.value = "";
+        if (e) e.value = "";
+        loadStats();
+        load();
+      });
     }
     load();
   }

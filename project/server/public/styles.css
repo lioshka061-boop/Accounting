@@ -1,4 +1,3 @@
-/* ===================== THEME ===================== */
 :root {
   --bg: #0c111a;
   --bg-gradient: radial-gradient(circle at 20% 20%, #182036 0, transparent 25%), radial-gradient(circle at 80% 0, #1c2740 0, transparent 22%), #0c111a;
@@ -37,7 +36,10 @@ a {
   text-decoration: none;
 }
 
-h1, h2, h3, h4 {
+h1,
+h2,
+h3,
+h4 {
   margin: 0 0 10px 0;
   font-weight: 700;
 }
@@ -51,7 +53,6 @@ p {
   margin-bottom: 14px;
 }
 
-/* ===================== LAYOUT ===================== */
 .sidebar {
   width: 240px;
   min-height: 100vh;
@@ -165,7 +166,6 @@ p {
   -webkit-overflow-scrolling: touch;
 }
 
-/* ===================== FORMS ===================== */
 label {
   display: block;
   margin: 6px 0 4px;
@@ -237,7 +237,6 @@ button.danger {
   box-shadow: 0 10px 24px rgba(255, 99, 110, 0.35);
 }
 
-/* ===================== FILTERS ===================== */
 .filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -266,7 +265,6 @@ button.danger {
   width: 100%;
 }
 
-/* ===================== TABLES ===================== */
 table {
   width: 100%;
   border-collapse: collapse;
@@ -320,7 +318,6 @@ tbody tr.row-return {
   gap: 6px;
 }
 
-/* ===================== STATUS ===================== */
 .status-pill {
   display: inline-block;
   padding: 4px 10px;
@@ -330,18 +327,34 @@ tbody tr.row-return {
   color: #0b0f1c;
 }
 
-.pill-blue { background: #9baaff; }
-.pill-green { background: #8ef1c2; }
-.pill-orange { background: #ffcc80; }
-.pill-red { background: #ff9c9c; }
-.pill-amber { background: #ffd46f; }
-.pill-grey { background: #c4ccdc; }
+.pill-blue {
+  background: #9baaff;
+}
+
+.pill-green {
+  background: #8ef1c2;
+}
+
+.pill-orange {
+  background: #ffcc80;
+}
+
+.pill-red {
+  background: #ff9c9c;
+}
+
+.pill-amber {
+  background: #ffd46f;
+}
+
+.pill-grey {
+  background: #c4ccdc;
+}
 
 .status-select {
   margin-top: 8px;
 }
 
-/* ===================== CARDS & GRIDS ===================== */
 .stats-grid,
 .charts-grid {
   display: grid;
@@ -429,13 +442,14 @@ tbody tr.row-return {
   gap: 10px;
 }
 
-.gap-sm { gap: 8px; }
+.gap-sm {
+  gap: 8px;
+}
 
 .weekend-toggle {
   width: auto;
 }
 
-/* ===================== ORDER CARDS (mobile helper) ===================== */
 .cards-list {
   display: none;
   margin-top: 14px;
@@ -464,7 +478,6 @@ tbody tr.row-return {
   font-weight: 600;
 }
 
-/* ===================== MODAL ===================== */
 .modal {
   position: fixed;
   inset: 0;
@@ -495,7 +508,6 @@ tbody tr.row-return {
   margin-top: 0;
 }
 
-/* ===================== MISC ===================== */
 .hidden {
   display: none !important;
 }
@@ -508,7 +520,6 @@ tbody tr.row-return {
   color: #ffd7d7;
 }
 
-/* ===================== RESPONSIVE ===================== */
 @media (max-width: 1100px) {
   .content {
     padding: 20px 18px 24px;
@@ -516,12 +527,14 @@ tbody tr.row-return {
 }
 
 @media (max-width: 900px) {
-  body {
-    flex-direction: column;
-  }
-
   .mobile-header {
     display: flex;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    flex-direction: column;
   }
 
   .sidebar {
@@ -559,10 +572,13 @@ tbody tr.row-return {
   .content {
     margin: 0;
     width: 100%;
+    padding: 16px 14px 22px;
   }
 
   .filters {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
   }
 
   .filters label {
@@ -572,6 +588,12 @@ tbody tr.row-return {
   .filters input,
   .filters select,
   .filters button {
+    width: 100%;
+  }
+
+  input,
+  select,
+  textarea {
     width: 100%;
   }
 
@@ -608,21 +630,6 @@ tbody tr.row-return {
   .cards-list {
     display: grid;
     grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 540px) {
-  .content {
-    padding: 16px 14px 22px;
-  }
-
-  h1 {
-    font-size: 26px;
-  }
-
-  .stat-card p,
-  .mini-card .mini-value {
-    font-size: 18px;
   }
 
   .order-card .row {

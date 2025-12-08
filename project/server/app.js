@@ -19,6 +19,20 @@ const normalizeDate = (value) => {
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString().slice(0, 10);
 };
+const buildDateFilter = (column, start, end) => {
+  const parts = [];
+  const params = [];
+  if (start) {
+    parts.push(`${column} >= ?`);
+    params.push(start);
+  }
+  if (end) {
+    parts.push(`${column} <= ?`);
+    params.push(end);
+  }
+  if (!parts.length) return { clause: "", params: [] };
+  return { clause: " AND " + parts.join(" AND "), params };
+};
 const generateOrderNumber = () => `№${Date.now()}`;
 
 // Financial parameters (can be tuned)
@@ -404,6 +418,8 @@ app.post("/api/suppliers/:id/adjust", async (req, res) => {
 
 app.get("/api/orders", async (req, res) => {
   const db = req.db;
+  const start = normalizeDate(req.query.start);
+  const end = normalizeDate(req.query.end);
   const rows = await db.all(`SELECT * FROM orders ORDER BY id DESC`);
 
   const touchedSuppliers = new Set();
@@ -441,12 +457,15 @@ app.get("/api/orders", async (req, res) => {
     await recalcSupplierBalance(db, sid);
   }
 
+  const dateFilter = buildDateFilter("o.date", start, end);
   const orders = await db.all(`
     SELECT o.*, s.name AS supplier_name
     FROM orders o
     LEFT JOIN suppliers s ON s.id = o.supplier_id
+    WHERE 1=1
+    ${dateFilter.clause}
     ORDER BY o.id DESC
-  `);
+  `, dateFilter.params);
 
   res.json(orders);
 });
@@ -582,12 +601,24 @@ app.delete("/api/orders/:id", async (req, res) => {
 //          STATS
 // =========================
 app.get("/api/stats/revenue", async (req, res) => {
-  const row = await req.db.get("SELECT COALESCE(SUM(sale),0) AS totalSales FROM orders WHERE isReturn = 0");
+  const start = normalizeDate(req.query.start);
+  const end = normalizeDate(req.query.end);
+  const dateFilter = buildDateFilter("date", start, end);
+  const row = await req.db.get(
+    `SELECT COALESCE(SUM(sale),0) AS totalSales FROM orders WHERE isReturn = 0 ${dateFilter.clause}`,
+    dateFilter.params
+  );
   res.json({ totalSales: round2(row.totalSales) });
 });
 
 app.get("/api/stats/profit", async (req, res) => {
-  const row = await req.db.get("SELECT COALESCE(SUM(profit),0) AS totalProfit FROM orders");
+  const start = normalizeDate(req.query.start);
+  const end = normalizeDate(req.query.end);
+  const dateFilter = buildDateFilter("date", start, end);
+  const row = await req.db.get(
+    `SELECT COALESCE(SUM(profit),0) AS totalProfit FROM orders WHERE 1=1 ${dateFilter.clause}`,
+    dateFilter.params
+  );
   res.json({ totalProfit: round2(row.totalProfit) });
 });
 
@@ -607,14 +638,25 @@ app.get("/api/stats/daily", async (req, res) => {
   );
   if (!weekendSet.size) weekendSet.add(0);
 
-  const today = new Date();
+  const startQuery = normalizeDate(req.query.start);
+  const endQuery = normalizeDate(req.query.end);
+  const today = endQuery ? new Date(endQuery) : new Date();
   const todayStr = today.toISOString().slice(0, 10);
+  const defaultStart = new Date();
+  defaultStart.setDate(defaultStart.getDate() - 60);
+  const startStr = startQuery || defaultStart.toISOString().slice(0, 10);
+  const endStr = endQuery || todayStr;
 
-  const orders = await req.db.all(`
+  const dateFilter = buildDateFilter("date", startStr, endStr);
+  const orders = await req.db.all(
+    `
     SELECT date, sale, profit, traffic_source
     FROM orders
-    WHERE date >= date('now','-60 day')
-  `);
+    WHERE 1=1
+    ${dateFilter.clause}
+  `,
+    dateFilter.params.length ? dateFilter.params : []
+  );
 
   const byDate = new Map();
   for (const o of orders) {
@@ -644,17 +686,17 @@ app.get("/api/stats/daily", async (req, res) => {
   const todayRemaining = Math.max(0, planTarget - todayData.profit + shortfall);
 
   // Monthly summary
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  const rangeStart = new Date(startStr);
+  const rangeEnd = new Date(endStr);
   let workingDays = 0;
-  for (let d = new Date(monthStart); d < nextMonth; d.setDate(d.getDate() + 1)) {
+  for (let d = new Date(rangeStart); d <= rangeEnd; d.setDate(d.getDate() + 1)) {
     if (weekendSet.has(d.getDay())) continue;
     workingDays++;
   }
 
   const monthData = { revenue: 0, profit: 0, count: 0 };
   for (const [dateStr, data] of byDate.entries()) {
-    if (dateStr >= monthStart.toISOString().slice(0, 10) && dateStr < nextMonth.toISOString().slice(0, 10)) {
+    if (dateStr >= startStr && dateStr <= endStr) {
       monthData.revenue += data.revenue;
       monthData.profit += data.profit;
       monthData.count += data.count;
@@ -698,24 +740,37 @@ app.get("/api/stats/daily", async (req, res) => {
 });
 
 app.get("/api/stats/series", async (req, res) => {
-  const revenueProfit = await req.db.all(`
+  const start = normalizeDate(req.query.start);
+  const end = normalizeDate(req.query.end);
+  const dateFilter = buildDateFilter("date", start, end);
+  const revenueProfit = await req.db.all(
+    `
     SELECT date AS label,
            COALESCE(SUM(sale), 0) AS revenue,
            COALESCE(SUM(profit), 0) AS profit
     FROM orders
+    WHERE 1=1
+    ${dateFilter.clause}
     GROUP BY date
     ORDER BY date ASC
-  `);
+  `,
+    dateFilter.params
+  );
 
-  const monthlyActual = await req.db.all(`
+  const monthlyActual = await req.db.all(
+    `
     SELECT strftime('%Y-%m', date) AS label,
            COALESCE(SUM(sale), 0) AS revenue,
            COALESCE(SUM(profit), 0) AS profit,
            COUNT(*) AS orders
     FROM orders
+    WHERE 1=1
+    ${dateFilter.clause}
     GROUP BY strftime('%Y-%m', date)
     ORDER BY label ASC
-  `);
+  `,
+    dateFilter.params
+  );
 
   const manualMonths = await req.db.all(`
     SELECT month AS label, revenue, profit, orders
@@ -730,7 +785,15 @@ app.get("/api/stats/series", async (req, res) => {
   for (const m of manualMonths) {
     monthlyMap.set(m.label, { ...m });
   }
-  const monthly = Array.from(monthlyMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  let monthly = Array.from(monthlyMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  if (start || end) {
+    monthly = monthly.filter(m => {
+      const label = `${m.label}-01`;
+      if (start && label < start) return false;
+      if (end && label > end) return false;
+      return true;
+    });
+  }
 
   const suppliers = await req.db.all(`
     SELECT name, balance
@@ -749,7 +812,10 @@ app.get("/api/stats/series", async (req, res) => {
     ORDER BY profit DESC
   `);
 
-  const totalsRow = await req.db.get(`SELECT COALESCE(SUM(sale),0) AS revenue, COALESCE(SUM(profit),0) AS profit, COUNT(*) AS orders FROM orders`);
+  const totalsRow = await req.db.get(
+    `SELECT COALESCE(SUM(sale),0) AS revenue, COALESCE(SUM(profit),0) AS profit, COUNT(*) AS orders FROM orders WHERE 1=1 ${dateFilter.clause}`,
+    dateFilter.params
+  );
   const overallAvgCheck = totalsRow.orders ? round2(totalsRow.revenue / totalsRow.orders) : 0;
 
   res.json({
