@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node server/app.js"
+    "dev": "nodemon server/app.js",
+    "start": "NODE_ENV=production node server/app.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
   }
 }

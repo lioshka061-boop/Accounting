@@ -1,14 +1,16 @@
 # Accounting (Railway-ready)
 
 ## Start locally
-1. `npm install`
-2. Заповни `.env` за зразком `.env.example`
-3. `npm start`
+1. `cp .env.example .env`
+2. За потреби онови `DATABASE_URL` / `PORT` у `.env`
+3. `npm install`
+4. `npm run dev`
 
 ## Деплой на Railway
-- Стартова команда: `node server/app.js`
-- Змінні середовища: `DATABASE_URL` (від Railway Postgres), опційно `PORT`
-- Порт: автоматично бере `process.env.PORT || 3000`
+- Потрібен сервис Postgres; прив'язати його `DATABASE_URL` до Node-сервісу
+- Стартова команда: `node server/app.js` (або `npm start`)
+- Змінні середовища: `DATABASE_URL`, опційно `PORT` (Railway ставить сам)
+- Порт: `process.env.PORT || 3000`
 
 ## Структура
 ```

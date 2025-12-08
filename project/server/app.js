@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -180,8 +181,8 @@ function computeFinancials(payload) {
   const supplierDeliveryCost = fromSupplier ? SUPPLIER_DELIVERY_PRICE : 0;
   const returnCost = returnDelivery;
 
-  let profitRaw =
-    sale - cost - promoFee - deliveryCost - supplierDeliveryCost - returnCost - prosail + prepay;
+  // Базовий прибуток: Продаж - Опт - ProSale
+  let profitRaw = sale - cost - prosail;
 
   let supplierBalanceChange = 0;
   switch (status) {
@@ -742,14 +743,14 @@ app.post("/api/stats/manual-months", async (req, res) => {
   }
 });
 
-app.use((req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+app.get("*", (req, res) => {
+  res.status(404).send("Not Found");
 });
 
 ensureTables()
   .then(() => {
     app.listen(PORT, () => {
-      console.log(`SERVER RUNNING on http://localhost:${PORT}`);
+      console.log(`SERVER RUNNING on port ${PORT}`);
     });
   })
   .catch(err => {
