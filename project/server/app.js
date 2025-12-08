@@ -1,10 +1,8 @@
-import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import bodyParser from "body-parser";
 import path from "path";
 import { fileURLToPath } from "url";
-import pool from "./db.js";
+import { query } from "./db.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,7 +11,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
@@ -43,21 +41,21 @@ const buildDateFilter = (column, start, end) => {
   return { clause: ` AND ${parts.join(" AND ")}`, params };
 };
 
+const q = async (text, params = []) => {
+  const res = await query(text, params);
+  return res.rows ?? res;
+};
+const one = async (text, params = []) => {
+  const rows = await q(text, params);
+  return rows[0] || null;
+};
+const exec = async (text, params = []) => {
+  await query(text, params);
+};
+
 const PROMO_PERCENT = 0.175;
 const OUR_DELIVERY_PRICE = 60;
 const SUPPLIER_DELIVERY_PRICE = 0;
-
-const q = async (sql, params = []) => {
-  const res = await pool.query(sql, params);
-  return res.rows;
-};
-const one = async (sql, params = []) => {
-  const rows = await q(sql, params);
-  return rows[0] || null;
-};
-const exec = async (sql, params = []) => {
-  await pool.query(sql, params);
-};
 
 async function ensureTables() {
   await exec(`
@@ -66,6 +64,9 @@ async function ensureTables() {
       name TEXT NOT NULL,
       balance NUMERIC DEFAULT 0
     );
+  `);
+
+  await exec(`
     CREATE TABLE IF NOT EXISTS orders (
       id SERIAL PRIMARY KEY,
       order_number TEXT,
@@ -88,6 +89,9 @@ async function ensureTables() {
       status TEXT DEFAULT 'Прийнято',
       cancel_reason TEXT
     );
+  `);
+
+  await exec(`
     CREATE TABLE IF NOT EXISTS supplier_adjustments (
       id SERIAL PRIMARY KEY,
       supplier_id INTEGER REFERENCES suppliers(id),
@@ -96,6 +100,9 @@ async function ensureTables() {
       note TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     );
+  `);
+
+  await exec(`
     CREATE TABLE IF NOT EXISTS manual_months (
       month TEXT PRIMARY KEY,
       revenue NUMERIC DEFAULT 0,
@@ -742,7 +749,7 @@ app.use((req, res) => {
 ensureTables()
   .then(() => {
     app.listen(PORT, () => {
-      console.log("SERVER RUNNING → http://localhost:" + PORT);
+      console.log(`SERVER RUNNING on http://localhost:${PORT}`);
     });
   })
   .catch(err => {
