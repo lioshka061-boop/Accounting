@@ -13,6 +13,11 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+app.get("/", (_req, res) => {
+  res.send("Server is working");
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
