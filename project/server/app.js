@@ -1,9 +1,10 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
 import path from "path";
 import { fileURLToPath } from "url";
-import { query, one, none } from "./db.js";
+import pool from "./db.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,7 +14,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, "..", "public")));
+app.use(express.static(path.join(__dirname, "public")));
 
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 const toNumber = (value) => {
@@ -46,14 +47,25 @@ const PROMO_PERCENT = 0.175;
 const OUR_DELIVERY_PRICE = 60;
 const SUPPLIER_DELIVERY_PRICE = 0;
 
+const q = async (sql, params = []) => {
+  const res = await pool.query(sql, params);
+  return res.rows;
+};
+const one = async (sql, params = []) => {
+  const rows = await q(sql, params);
+  return rows[0] || null;
+};
+const exec = async (sql, params = []) => {
+  await pool.query(sql, params);
+};
+
 async function ensureTables() {
-  await none(`
+  await exec(`
     CREATE TABLE IF NOT EXISTS suppliers (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       balance NUMERIC DEFAULT 0
     );
-
     CREATE TABLE IF NOT EXISTS orders (
       id SERIAL PRIMARY KEY,
       order_number TEXT,
@@ -76,7 +88,6 @@ async function ensureTables() {
       status TEXT DEFAULT 'Прийнято',
       cancel_reason TEXT
     );
-
     CREATE TABLE IF NOT EXISTS supplier_adjustments (
       id SERIAL PRIMARY KEY,
       supplier_id INTEGER REFERENCES suppliers(id),
@@ -85,7 +96,6 @@ async function ensureTables() {
       note TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     );
-
     CREATE TABLE IF NOT EXISTS manual_months (
       month TEXT PRIMARY KEY,
       revenue NUMERIC DEFAULT 0,
@@ -106,12 +116,12 @@ async function recalcSupplierBalance(supplierId) {
     [supplierId]
   );
   const balance = round2(toNumber(orderRow?.balance) + toNumber(adjRow?.adj));
-  await none(`UPDATE suppliers SET balance = $1 WHERE id = $2`, [balance, supplierId]);
+  await exec(`UPDATE suppliers SET balance = $1 WHERE id = $2`, [balance, supplierId]);
   return balance;
 }
 
 async function addAdjustment(supplierId, delta, type = "manual", note = "") {
-  await none(
+  await exec(
     `INSERT INTO supplier_adjustments (supplier_id, delta, type, note) VALUES ($1, $2, $3, $4)`,
     [supplierId, round2(delta), type, note]
   );
@@ -241,14 +251,14 @@ async function recalcSupplierBalancesAfterChange(oldSupplierId, newSupplierId) {
 
 // ---------- SUPPLIERS ----------
 app.get("/api/suppliers", async (_req, res) => {
-  const suppliers = await query(`SELECT * FROM suppliers ORDER BY id DESC`);
+  const suppliers = await q(`SELECT * FROM suppliers ORDER BY id DESC`);
   res.json(suppliers);
 });
 
 app.post("/api/suppliers", async (req, res) => {
   const { name } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
-  await none(`INSERT INTO suppliers (name) VALUES ($1)`, [name]);
+  await exec(`INSERT INTO suppliers (name) VALUES ($1)`, [name]);
   res.json({ ok: true });
 });
 
@@ -297,7 +307,7 @@ app.get("/api/orders", async (req, res) => {
   const end = normalizeDate(req.query.end);
   const dateFilter = buildDateFilter("o.date", start, end);
 
-  const orders = await query(
+  const orders = await q(
     `
     SELECT o.*, s.name AS supplier_name
     FROM orders o
@@ -332,7 +342,7 @@ app.post("/api/orders", async (req, res) => {
     const fin = computeFinancials(data);
     const orderNumber = (data.order_number || "").trim() || generateOrderNumber();
 
-    await none(
+    await exec(
       `
       INSERT INTO orders
       (order_number, title, note, date, sale, cost, prosail, prepay, supplier_id,
@@ -384,7 +394,7 @@ app.put("/api/orders/:id", async (req, res) => {
     const normalizedDate = await validateOrder(data);
     const fin = computeFinancials(data);
 
-    await none(
+    await exec(
       `
       UPDATE orders SET
         order_number=$1, title=$2, note=$3, date=$4,
@@ -432,7 +442,7 @@ app.delete("/api/orders/:id", async (req, res) => {
     const existing = await one(`SELECT supplier_id FROM orders WHERE id = $1`, [id]);
     if (!existing) return res.status(404).json({ error: "Not found" });
 
-    await none(`DELETE FROM orders WHERE id = $1`, [id]);
+    await exec(`DELETE FROM orders WHERE id = $1`, [id]);
     await recalcSupplierBalance(existing.supplier_id);
 
     res.json({ ok: true });
@@ -492,7 +502,7 @@ app.get("/api/stats/daily", async (req, res) => {
   const endStr = endQuery || todayStr;
 
   const dateFilter = buildDateFilter("date", startStr, endStr);
-  const orders = await query(
+  const orders = await q(
     `
     SELECT date, sale, profit, traffic_source
     FROM orders
@@ -587,7 +597,7 @@ app.get("/api/stats/series", async (req, res) => {
   const end = normalizeDate(req.query.end);
   const dateFilter = buildDateFilter("date", start, end);
 
-  const revenueProfit = await query(
+  const revenueProfit = await q(
     `
     SELECT date AS label,
            COALESCE(SUM(sale), 0) AS revenue,
@@ -601,7 +611,7 @@ app.get("/api/stats/series", async (req, res) => {
     dateFilter.params
   );
 
-  const monthlyActual = await query(
+  const monthlyActual = await q(
     `
     SELECT to_char(date, 'YYYY-MM') AS label,
            COALESCE(SUM(sale), 0) AS revenue,
@@ -616,7 +626,7 @@ app.get("/api/stats/series", async (req, res) => {
     dateFilter.params
   );
 
-  const manualMonths = await query(
+  const manualMonths = await q(
     `SELECT month AS label, revenue, profit, orders FROM manual_months ORDER BY month ASC`
   );
 
@@ -637,7 +647,7 @@ app.get("/api/stats/series", async (req, res) => {
     });
   }
 
-  const suppliers = await query(
+  const suppliers = await q(
     `
     SELECT name, balance
     FROM suppliers
@@ -646,7 +656,7 @@ app.get("/api/stats/series", async (req, res) => {
   `
   );
 
-  const suppliersPerf = await query(
+  const suppliersPerf = await q(
     `
     SELECT s.name,
            COALESCE(SUM(o.sale), 0) AS revenue,
@@ -695,7 +705,7 @@ app.get("/api/stats/series", async (req, res) => {
 });
 
 app.get("/api/stats/manual-months", async (_req, res) => {
-  const rows = await query(`SELECT * FROM manual_months ORDER BY month DESC`);
+  const rows = await q(`SELECT * FROM manual_months ORDER BY month DESC`);
   res.json(rows);
 });
 
@@ -707,7 +717,7 @@ app.post("/api/stats/manual-months", async (req, res) => {
     const prof = toNumber(profit);
     const ord = Number.isInteger(orders) ? orders : Number(orders) || 0;
 
-    await none(
+    await exec(
       `
       INSERT INTO manual_months (month, revenue, profit, orders)
       VALUES ($1, $2, $3, $4)
@@ -726,14 +736,16 @@ app.post("/api/stats/manual-months", async (req, res) => {
 });
 
 app.use((req, res) => {
-  res.sendFile(path.join(__dirname, "..", "public", "index.html"));
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-ensureTables().then(() => {
-  app.listen(PORT, () => {
-    console.log("SERVER RUNNING → http://localhost:" + PORT);
+ensureTables()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log("SERVER RUNNING → http://localhost:" + PORT);
+    });
+  })
+  .catch(err => {
+    console.error("Failed to init tables:", err);
+    process.exit(1);
   });
-}).catch(err => {
-  console.error("Failed to init tables:", err);
-  process.exit(1);
-});
