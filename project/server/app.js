@@ -1,14 +1,21 @@
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
-import sqlite3 from "sqlite3";
-import { open } from "sqlite";
 import path from "path";
 import { fileURLToPath } from "url";
+import { query, one, none } from "./db.js";
 
-// Basic money helpers
-const MONEY_SCALE = 100;
-const round2 = (value) => Math.round((Number(value) || 0) * MONEY_SCALE) / MONEY_SCALE;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, "..", "public")));
+
+const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 const toNumber = (value) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
@@ -19,123 +26,96 @@ const normalizeDate = (value) => {
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString().slice(0, 10);
 };
+const generateOrderNumber = () => `№${Date.now()}`;
 const buildDateFilter = (column, start, end) => {
   const parts = [];
   const params = [];
   if (start) {
-    parts.push(`${column} >= ?`);
     params.push(start);
+    parts.push(`${column} >= $${params.length}`);
   }
   if (end) {
-    parts.push(`${column} <= ?`);
     params.push(end);
+    parts.push(`${column} <= $${params.length}`);
   }
   if (!parts.length) return { clause: "", params: [] };
-  return { clause: " AND " + parts.join(" AND "), params };
+  return { clause: ` AND ${parts.join(" AND ")}`, params };
 };
-const generateOrderNumber = () => `№${Date.now()}`;
 
-// Financial parameters (can be tuned)
-const PROMO_PERCENT = 0.175;          // 17.5% комісія Prom
-const OUR_DELIVERY_PRICE = 60;        // доставка, якщо ourTTN = true
-const SUPPLIER_DELIVERY_PRICE = 0;    // компенсація доставки постачальнику, якщо fromSupplier = true
+const PROMO_PERCENT = 0.175;
+const OUR_DELIVERY_PRICE = 60;
+const SUPPLIER_DELIVERY_PRICE = 0;
 
-// Fix __dirname for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const app = express();
-const PORT = 3000;
-
-app.use(cors());
-app.use(bodyParser.json());
-
-// ---- Serve frontend ----
-app.use(express.static(path.join(__dirname, "..", "public")));
-
-// ======== DB INIT =========
-async function initDB() {
-  const db = await open({
-    filename: path.join(__dirname, "db.sqlite"),
-    driver: sqlite3.Database
-  });
-
-  await db.exec(`
+async function ensureTables() {
+  await none(`
     CREATE TABLE IF NOT EXISTS suppliers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
-      balance REAL DEFAULT 0
+      balance NUMERIC DEFAULT 0
     );
-  `);
 
-  await db.exec(`
     CREATE TABLE IF NOT EXISTS orders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       order_number TEXT,
       title TEXT,
       note TEXT,
-      date TEXT,
-      sale REAL,
-      cost REAL,
-      prosail REAL,
-      prepay REAL,
-      supplier_id INTEGER,
-      promoPay INTEGER,
-      ourTTN INTEGER,
-      fromSupplier INTEGER,
-      isReturn INTEGER,
-      returnDelivery REAL,
-      profit REAL,
-      supplier_balance REAL,
+      date DATE,
+      sale NUMERIC,
+      cost NUMERIC,
+      prosail NUMERIC,
+      prepay NUMERIC,
+      supplier_id INTEGER REFERENCES suppliers(id),
+      promoPay BOOLEAN DEFAULT FALSE,
+      ourTTN BOOLEAN DEFAULT FALSE,
+      fromSupplier BOOLEAN DEFAULT FALSE,
+      isReturn BOOLEAN DEFAULT FALSE,
+      returnDelivery NUMERIC DEFAULT 0,
+      profit NUMERIC DEFAULT 0,
+      supplier_balance NUMERIC DEFAULT 0,
       traffic_source TEXT,
       status TEXT DEFAULT 'Прийнято',
       cancel_reason TEXT
     );
-  `);
 
-  await db.exec(`
     CREATE TABLE IF NOT EXISTS supplier_adjustments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      supplier_id INTEGER NOT NULL,
-      delta REAL NOT NULL,
+      id SERIAL PRIMARY KEY,
+      supplier_id INTEGER REFERENCES suppliers(id),
+      delta NUMERIC NOT NULL,
       type TEXT,
       note TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS manual_months (
+      month TEXT PRIMARY KEY,
+      revenue NUMERIC DEFAULT 0,
+      profit NUMERIC DEFAULT 0,
+      orders INTEGER DEFAULT 0
     );
   `);
-
-  await ensureOrderColumns(db);
-  await ensureManualMonths(db);
-  await normalizeExistingOrders(db);
-  return db;
 }
-const dbPromise = initDB();
 
-// inject db
-app.use((req, res, next) => {
-  dbPromise.then(db => {
-    req.db = db;
-    next();
-  });
-});
-
-async function recalcSupplierBalance(db, supplierId) {
+async function recalcSupplierBalance(supplierId) {
   if (!supplierId) return;
-  const orderRow = await db.get(
-    `SELECT COALESCE(SUM(supplier_balance), 0) AS balance
-     FROM orders WHERE supplier_id = ?`,
+  const orderRow = await one(
+    `SELECT COALESCE(SUM(supplier_balance),0) AS balance FROM orders WHERE supplier_id = $1`,
     [supplierId]
   );
-
-  const adjustRow = await db.get(
-    `SELECT COALESCE(SUM(delta), 0) AS adj
-     FROM supplier_adjustments WHERE supplier_id = ?`,
+  const adjRow = await one(
+    `SELECT COALESCE(SUM(delta),0) AS adj FROM supplier_adjustments WHERE supplier_id = $1`,
     [supplierId]
   );
+  const balance = round2(toNumber(orderRow?.balance) + toNumber(adjRow?.adj));
+  await none(`UPDATE suppliers SET balance = $1 WHERE id = $2`, [balance, supplierId]);
+  return balance;
+}
 
-  const balance = round2(orderRow.balance + adjustRow.adj);
-  await db.run("UPDATE suppliers SET balance = ? WHERE id = ?", [balance, supplierId]);
+async function addAdjustment(supplierId, delta, type = "manual", note = "") {
+  await none(
+    `INSERT INTO supplier_adjustments (supplier_id, delta, type, note) VALUES ($1, $2, $3, $4)`,
+    [supplierId, round2(delta), type, note]
+  );
+  return recalcSupplierBalance(supplierId);
 }
 
 function computeFinancials(payload) {
@@ -152,20 +132,14 @@ function computeFinancials(payload) {
   const isReturn = !!payload.isReturn || status === "Повернення";
 
   if (isReturn) {
-    const sale = 0;
-    const cost = baseCost;
-    const prosail = 0;
     const returnCost = baseReturnDelivery;
     const supplierDeliveryCost = fromSupplier ? SUPPLIER_DELIVERY_PRICE : 0;
-
-    // Повернення: платимо Prosale і доставку
     const profitRaw = -(returnCost + baseProsail);
-    let supplierBalanceChange = -returnCost - supplierDeliveryCost;
-
+    const supplierBalanceChange = -returnCost - supplierDeliveryCost;
     return {
-      sale: round2(sale),
-      cost: round2(cost),
-      prosail: round2(prosail),
+      sale: 0,
+      cost: round2(baseCost),
+      prosail: 0,
       prepay: round2(basePrepay),
       returnDelivery: round2(returnCost),
       profit: round2(profitRaw),
@@ -173,7 +147,8 @@ function computeFinancials(payload) {
       promoPay,
       ourTTN,
       fromSupplier,
-      isReturn
+      isReturn,
+      status
     };
   }
 
@@ -183,25 +158,17 @@ function computeFinancials(payload) {
   const prepay = basePrepay;
   const returnDelivery = baseReturnDelivery;
 
-  const promoFee = 0; // за поточною логікою комісію Prom не віднімаємо
+  const promoFee = promoPay ? sale * PROMO_PERCENT : 0;
   const deliveryCost = ourTTN ? OUR_DELIVERY_PRICE : 0;
   const supplierDeliveryCost = fromSupplier ? SUPPLIER_DELIVERY_PRICE : 0;
   const returnCost = returnDelivery;
 
   let profitRaw =
-    sale
-    - cost
-    - promoFee
-    - deliveryCost
-    - supplierDeliveryCost
-    - returnCost
-    - prosail;
+    sale - cost - promoFee - deliveryCost - supplierDeliveryCost - returnCost - prosail + prepay;
 
   let supplierBalanceChange = 0;
-
   switch (status) {
     case "Відмова":
-      // ProSale повернувся, мінусуємо тільки доставку
       profitRaw = -(deliveryCost + returnCost);
       supplierBalanceChange = 0;
       break;
@@ -210,7 +177,6 @@ function computeFinancials(payload) {
       supplierBalanceChange = -returnCost;
       break;
     case "Під замовлення":
-      // Заробляємо передплату, віднімаємо ProSale і доставку, без руху по постачальнику
       profitRaw = prepay - prosail - deliveryCost;
       supplierBalanceChange = 0;
       break;
@@ -218,13 +184,13 @@ function computeFinancials(payload) {
       profitRaw = 0;
       supplierBalanceChange = 0;
       break;
-    default: // Прийнято / Виконано
+    default:
       if (fromSupplier) {
-        supplierBalanceChange = sale - cost; // постачальник нам винен маржу
+        supplierBalanceChange = sale - cost;
       } else if (ourTTN || promoPay) {
-        supplierBalanceChange = -cost; // ми винні постачальнику за товар
+        supplierBalanceChange = -cost;
       } else {
-        supplierBalanceChange = sale - cost; // базово постачальник винен маржу
+        supplierBalanceChange = sale - cost;
       }
       break;
   }
@@ -245,7 +211,7 @@ function computeFinancials(payload) {
   };
 }
 
-async function validateOrder(db, data, { isUpdate = false } = {}) {
+async function validateOrder(data) {
   const normalizedDate = normalizeDate(data.date);
   if (!normalizedDate) throw new Error("Невірна дата");
 
@@ -260,127 +226,45 @@ async function validateOrder(db, data, { isUpdate = false } = {}) {
     if (!saleNum || saleNum < 0) throw new Error("Продаж має бути > 0");
   }
 
-  const exists = await db.get("SELECT id FROM suppliers WHERE id = ?", [supplierId]);
+  const exists = await one(`SELECT id FROM suppliers WHERE id = $1`, [supplierId]);
   if (!exists) throw new Error("Постачальник не знайдений");
 
   return normalizedDate;
 }
 
-async function recalcSupplierBalancesAfterChange(db, oldSupplierId, newSupplierId) {
-  const uniqIds = new Set([oldSupplierId, newSupplierId].filter(Boolean));
-  for (const id of uniqIds) {
-    await recalcSupplierBalance(db, id);
+async function recalcSupplierBalancesAfterChange(oldSupplierId, newSupplierId) {
+  const uniq = new Set([oldSupplierId, newSupplierId].filter(Boolean));
+  for (const id of uniq) {
+    await recalcSupplierBalance(id);
   }
 }
 
-async function normalizeExistingOrders(db) {
-  const orders = await db.all("SELECT * FROM orders");
-  const touchedSuppliers = new Set();
-
-  for (const order of orders) {
-    const normalizedDate = normalizeDate(order.date) || order.date;
-    const fin = computeFinancials(order);
-    touchedSuppliers.add(order.supplier_id);
-
-    await db.run(
-      `UPDATE orders SET
-        date = ?, sale = ?, cost = ?, prosail = ?, prepay = ?, promoPay = ?, ourTTN = ?, fromSupplier = ?,
-        isReturn = ?, returnDelivery = ?, profit = ?, supplier_balance = ?, traffic_source = ?, status = ?, cancel_reason = ?
-       WHERE id = ?`,
-      [
-        normalizedDate,
-        fin.sale,
-        fin.cost,
-        fin.prosail,
-        fin.prepay,
-        fin.promoPay ? 1 : 0,
-        fin.ourTTN ? 1 : 0,
-        fin.fromSupplier ? 1 : 0,
-        fin.isReturn ? 1 : 0,
-        fin.returnDelivery,
-        fin.profit,
-        fin.supplier_balance,
-        order.traffic_source || null,
-        order.status || "Прийнято",
-        order.cancel_reason || null,
-        order.id
-      ]
-    );
-  }
-
-  for (const supplierId of touchedSuppliers) {
-    await recalcSupplierBalance(db, supplierId);
-  }
-}
-
-async function addAdjustment(db, supplierId, delta, type = "manual", note = "") {
-  await db.run(
-    `INSERT INTO supplier_adjustments (supplier_id, delta, type, note)
-     VALUES (?, ?, ?, ?)`,
-    [supplierId, round2(delta), type, note]
-  );
-  await recalcSupplierBalance(db, supplierId);
-}
-
-async function ensureOrderColumns(db) {
-  const cols = await db.all("PRAGMA table_info(orders)");
-  const names = cols.map(c => c.name);
-  const alters = [];
-  if (!names.includes("traffic_source")) alters.push("ADD COLUMN traffic_source TEXT");
-  if (!names.includes("status")) alters.push("ADD COLUMN status TEXT DEFAULT 'Прийнято'");
-  if (!names.includes("cancel_reason")) alters.push("ADD COLUMN cancel_reason TEXT");
-  for (const stmt of alters) {
-    await db.exec(`ALTER TABLE orders ${stmt}`);
-  }
-}
-
-async function ensureManualMonths(db) {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS manual_months (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      month TEXT NOT NULL UNIQUE,
-      revenue REAL DEFAULT 0,
-      profit REAL DEFAULT 0,
-      orders INTEGER DEFAULT 0
-    );
-  `);
-}
-
-// =========================
-//     SUPPLIERS ROUTES
-// =========================
-
-app.get("/api/suppliers", async (req, res) => {
-  const suppliers = await req.db.all("SELECT * FROM suppliers ORDER BY id DESC");
+// ---------- SUPPLIERS ----------
+app.get("/api/suppliers", async (_req, res) => {
+  const suppliers = await query(`SELECT * FROM suppliers ORDER BY id DESC`);
   res.json(suppliers);
 });
 
 app.post("/api/suppliers", async (req, res) => {
   const { name } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
-
-  await req.db.run("INSERT INTO suppliers (name) VALUES (?)", [name]);
+  await none(`INSERT INTO suppliers (name) VALUES ($1)`, [name]);
   res.json({ ok: true });
 });
 
-// Adjust supplier balance: kind = payout|payment|set
 app.post("/api/suppliers/:id/adjust", async (req, res) => {
   try {
-    const db = req.db;
     const supplierId = Number(req.params.id);
     const { kind, amount, note } = req.body;
-
     if (!supplierId) return res.status(400).json({ error: "supplier required" });
-    const exists = await db.get("SELECT id FROM suppliers WHERE id = ?", [supplierId]);
+    const exists = await one(`SELECT id, balance FROM suppliers WHERE id = $1`, [supplierId]);
     if (!exists) return res.status(404).json({ error: "supplier not found" });
 
     if (kind === "set") {
-      const target = toNumber(amount);
-      const currBalRow = await db.get("SELECT balance FROM suppliers WHERE id = ?", [supplierId]);
-      const current = toNumber(currBalRow?.balance);
-
+      const target = round2(toNumber(amount));
+      const current = round2(toNumber(exists.balance));
       const delta = target - current;
-      await addAdjustment(db, supplierId, delta, "set", note || "Ручна зміна балансу");
+      await addAdjustment(supplierId, delta, "set", note || "Ручна зміна балансу");
       return res.json({ ok: true, balance: target });
     }
 
@@ -389,187 +273,144 @@ app.post("/api/suppliers/:id/adjust", async (req, res) => {
 
     let delta = 0;
     let typeLabel = kind;
-
     if (kind === "payout") {
-      // Ми платимо постачальнику → баланс рухається в бік збільшення (менше боргу)
       delta = sum;
       typeLabel = "Виплата постачальнику";
     } else if (kind === "payment") {
-      // Постачальник платить нам → баланс зменшується
       delta = -sum;
       typeLabel = "Оплата від постачальника";
     } else {
       return res.status(400).json({ error: "invalid kind" });
     }
 
-    await addAdjustment(db, supplierId, delta, kind, note || typeLabel);
-    const newBal = await db.get("SELECT balance FROM suppliers WHERE id = ?", [supplierId]);
-    res.json({ ok: true, balance: newBal.balance });
-
+    const balance = await addAdjustment(supplierId, delta, kind, note || typeLabel);
+    res.json({ ok: true, balance });
   } catch (err) {
     console.error("ADJUST ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// =========================
-//        ORDERS ROUTES
-// =========================
-
+// ---------- ORDERS ----------
 app.get("/api/orders", async (req, res) => {
-  const db = req.db;
   const start = normalizeDate(req.query.start);
   const end = normalizeDate(req.query.end);
-  const rows = await db.all(`SELECT * FROM orders ORDER BY id DESC`);
-
-  const touchedSuppliers = new Set();
-  for (const row of rows) {
-    const fin = computeFinancials(row);
-    const normalizedDate = normalizeDate(row.date) || row.date;
-    await db.run(
-      `UPDATE orders SET
-        date=?, sale=?, cost=?, prosail=?, prepay=?, promoPay=?, ourTTN=?, fromSupplier=?,
-        isReturn=?, returnDelivery=?, profit=?, supplier_balance=?, traffic_source=?, status=?, cancel_reason=?
-       WHERE id=?`,
-      [
-        normalizedDate,
-        fin.sale,
-        fin.cost,
-        fin.prosail,
-        fin.prepay,
-        fin.promoPay ? 1 : 0,
-        fin.ourTTN ? 1 : 0,
-        fin.fromSupplier ? 1 : 0,
-        fin.isReturn ? 1 : 0,
-        fin.returnDelivery,
-        fin.profit,
-        fin.supplier_balance,
-        row.traffic_source || null,
-        row.status || "Прийнято",
-        row.cancel_reason || null,
-        row.id
-      ]
-    );
-    touchedSuppliers.add(row.supplier_id);
-  }
-
-  for (const sid of touchedSuppliers) {
-    await recalcSupplierBalance(db, sid);
-  }
-
   const dateFilter = buildDateFilter("o.date", start, end);
-  const orders = await db.all(`
+
+  const orders = await query(
+    `
     SELECT o.*, s.name AS supplier_name
     FROM orders o
     LEFT JOIN suppliers s ON s.id = o.supplier_id
     WHERE 1=1
     ${dateFilter.clause}
     ORDER BY o.id DESC
-  `, dateFilter.params);
-
+  `,
+    dateFilter.params
+  );
   res.json(orders);
 });
 
 app.get("/api/orders/:id", async (req, res) => {
-  const order = await req.db.get(`
+  const order = await one(
+    `
     SELECT o.*, s.name AS supplier_name
     FROM orders o
     LEFT JOIN suppliers s ON s.id = o.supplier_id
-    WHERE o.id = ?`,
+    WHERE o.id = $1
+  `,
     [req.params.id]
   );
   if (!order) return res.status(404).json({ error: "Not found" });
   res.json(order);
 });
 
-// ------ Create order ------
 app.post("/api/orders", async (req, res) => {
   try {
     const data = req.body;
-    const db = req.db;
-
-    const normalizedDate = await validateOrder(db, data);
-    const financials = computeFinancials(data);
+    const normalizedDate = await validateOrder(data);
+    const fin = computeFinancials(data);
     const orderNumber = (data.order_number || "").trim() || generateOrderNumber();
-    if (financials.sale === null || Number.isNaN(financials.sale)) throw new Error("Невірні дані продажу");
 
-    await db.run(
-      `INSERT INTO orders 
-      (order_number, title, note, date, sale, cost, prosail, prepay,
-       supplier_id, promoPay, ourTTN, fromSupplier,
-       isReturn, returnDelivery, profit, supplier_balance, traffic_source, status, cancel_reason)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    await none(
+      `
+      INSERT INTO orders
+      (order_number, title, note, date, sale, cost, prosail, prepay, supplier_id,
+       promoPay, ourTTN, fromSupplier, isReturn, returnDelivery, profit, supplier_balance,
+       traffic_source, status, cancel_reason)
+      VALUES
+      ($1,$2,$3,$4,$5,$6,$7,$8,$9,
+       $10,$11,$12,$13,$14,$15,$16,
+       $17,$18,$19)
+    `,
       [
         orderNumber,
         data.title,
         data.note,
         normalizedDate,
-        financials.sale,
-        financials.cost,
-        financials.prosail,
-        financials.prepay,
+        fin.sale,
+        fin.cost,
+        fin.prosail,
+        fin.prepay,
         data.supplier_id,
-        financials.promoPay ? 1 : 0,
-        financials.ourTTN ? 1 : 0,
-        financials.fromSupplier ? 1 : 0,
-        financials.isReturn ? 1 : 0,
-        financials.returnDelivery,
-        financials.profit,
-        financials.supplier_balance,
+        fin.promoPay,
+        fin.ourTTN,
+        fin.fromSupplier,
+        fin.isReturn,
+        fin.returnDelivery,
+        fin.profit,
+        fin.supplier_balance,
         data.traffic_source || null,
         data.status || "Прийнято",
         data.cancel_reason || null
       ]
     );
 
-    await recalcSupplierBalance(db, data.supplier_id);
-
+    await recalcSupplierBalance(data.supplier_id);
     res.json({ ok: true });
-
   } catch (err) {
-    console.log("ORDER ERROR:", err);
-    const code = err.message ? 400 : 500;
-    res.status(code).json({ error: err.message || "Server error" });
+    console.error("ORDER CREATE ERROR:", err);
+    res.status(400).json({ error: err.message || "Server error" });
   }
 });
 
-// ------ Update order ------
 app.put("/api/orders/:id", async (req, res) => {
   try {
-    const data = req.body;
-    const db = req.db;
-    const id = req.params.id;
-
-    const existing = await db.get("SELECT supplier_id FROM orders WHERE id = ?", [id]);
+    const id = Number(req.params.id);
+    const existing = await one(`SELECT * FROM orders WHERE id = $1`, [id]);
     if (!existing) return res.status(404).json({ error: "Not found" });
 
-    const normalizedDate = await validateOrder(db, data, { isUpdate: true });
-    const financials = computeFinancials(data);
-    const orderNumber = (data.order_number || "").trim() || generateOrderNumber();
+    const data = req.body;
+    const normalizedDate = await validateOrder(data);
+    const fin = computeFinancials(data);
 
-    await db.run(
-      `UPDATE orders SET
-        order_number=?, title=?, note=?, date=?, sale=?, cost=?, prosail=?, prepay=?,
-        supplier_id=?, promoPay=?, ourTTN=?, fromSupplier=?,
-        isReturn=?, returnDelivery=?, profit=?, supplier_balance=?, traffic_source=?, status=?, cancel_reason=?
-       WHERE id=?`,
+    await none(
+      `
+      UPDATE orders SET
+        order_number=$1, title=$2, note=$3, date=$4,
+        sale=$5, cost=$6, prosail=$7, prepay=$8,
+        supplier_id=$9, promoPay=$10, ourTTN=$11, fromSupplier=$12,
+        isReturn=$13, returnDelivery=$14, profit=$15, supplier_balance=$16,
+        traffic_source=$17, status=$18, cancel_reason=$19
+      WHERE id=$20
+    `,
       [
-        orderNumber,
+        data.order_number || existing.order_number,
         data.title,
         data.note,
         normalizedDate,
-        financials.sale,
-        financials.cost,
-        financials.prosail,
-        financials.prepay,
+        fin.sale,
+        fin.cost,
+        fin.prosail,
+        fin.prepay,
         data.supplier_id,
-        financials.promoPay ? 1 : 0,
-        financials.ourTTN ? 1 : 0,
-        financials.fromSupplier ? 1 : 0,
-        financials.isReturn ? 1 : 0,
-        financials.returnDelivery,
-        financials.profit,
-        financials.supplier_balance,
+        fin.promoPay,
+        fin.ourTTN,
+        fin.fromSupplier,
+        fin.isReturn,
+        fin.returnDelivery,
+        fin.profit,
+        fin.supplier_balance,
         data.traffic_source || null,
         data.status || "Прийнято",
         data.cancel_reason || null,
@@ -577,54 +418,57 @@ app.put("/api/orders/:id", async (req, res) => {
       ]
     );
 
-    await recalcSupplierBalancesAfterChange(db, existing.supplier_id, data.supplier_id);
-
+    await recalcSupplierBalancesAfterChange(existing.supplier_id, data.supplier_id);
     res.json({ ok: true });
-
   } catch (err) {
-    console.log("UPDATE ERROR:", err);
-    const code = err.message ? 400 : 500;
-    res.status(code).json({ error: err.message || "Server error" });
+    console.error("ORDER UPDATE ERROR:", err);
+    res.status(400).json({ error: err.message || "Server error" });
   }
 });
 
-// ------ Delete order ------
 app.delete("/api/orders/:id", async (req, res) => {
-  const db = req.db;
-  const existing = await db.get("SELECT supplier_id FROM orders WHERE id = ?", [req.params.id]);
-  await db.run("DELETE FROM orders WHERE id = ?", [req.params.id]);
-  if (existing) await recalcSupplierBalance(db, existing.supplier_id);
-  res.json({ ok: true });
+  try {
+    const id = Number(req.params.id);
+    const existing = await one(`SELECT supplier_id FROM orders WHERE id = $1`, [id]);
+    if (!existing) return res.status(404).json({ error: "Not found" });
+
+    await none(`DELETE FROM orders WHERE id = $1`, [id]);
+    await recalcSupplierBalance(existing.supplier_id);
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// =========================
-//          STATS
-// =========================
+// ---------- STATS ----------
 app.get("/api/stats/revenue", async (req, res) => {
   const start = normalizeDate(req.query.start);
   const end = normalizeDate(req.query.end);
   const dateFilter = buildDateFilter("date", start, end);
-  const row = await req.db.get(
-    `SELECT COALESCE(SUM(sale),0) AS totalSales FROM orders WHERE isReturn = 0 ${dateFilter.clause}`,
+  const row = await one(
+    `SELECT COALESCE(SUM(sale),0) AS totalSales FROM orders WHERE isReturn = FALSE ${dateFilter.clause}`,
     dateFilter.params
   );
-  res.json({ totalSales: round2(row.totalSales) });
+  const totalSales = round2(toNumber(row?.totalsales ?? row?.totalSales ?? 0));
+  res.json({ totalSales });
 });
 
 app.get("/api/stats/profit", async (req, res) => {
   const start = normalizeDate(req.query.start);
   const end = normalizeDate(req.query.end);
   const dateFilter = buildDateFilter("date", start, end);
-  const row = await req.db.get(
+  const row = await one(
     `SELECT COALESCE(SUM(profit),0) AS totalProfit FROM orders WHERE 1=1 ${dateFilter.clause}`,
     dateFilter.params
   );
-  res.json({ totalProfit: round2(row.totalProfit) });
+  const totalProfit = round2(toNumber(row?.totalprofit ?? row?.totalProfit ?? 0));
+  res.json({ totalProfit });
 });
 
-app.get("/api/stats/debts", async (req, res) => {
-  const row = await req.db.get("SELECT COALESCE(SUM(balance),0) AS sumBalance FROM suppliers");
-  const sumBalance = round2(row.sumBalance);
+app.get("/api/stats/debts", async (_req, res) => {
+  const row = await one(`SELECT COALESCE(SUM(balance),0) AS sumBalance FROM suppliers`, []);
+  const sumBalance = round2(row?.sumbalance || row?.sumBalance || 0);
   const suppliersOwe = sumBalance > 0 ? sumBalance : 0;
   const weOwe = sumBalance < 0 ? Math.abs(sumBalance) : 0;
   res.json({ suppliersOwe, weOwe });
@@ -648,7 +492,7 @@ app.get("/api/stats/daily", async (req, res) => {
   const endStr = endQuery || todayStr;
 
   const dateFilter = buildDateFilter("date", startStr, endStr);
-  const orders = await req.db.all(
+  const orders = await query(
     `
     SELECT date, sale, profit, traffic_source
     FROM orders
@@ -685,7 +529,6 @@ app.get("/api/stats/daily", async (req, res) => {
   const todayData = byDate.get(todayStr) || { revenue: 0, profit: 0, count: 0, sources: {} };
   const todayRemaining = Math.max(0, planTarget - todayData.profit + shortfall);
 
-  // Monthly summary
   const rangeStart = new Date(startStr);
   const rangeEnd = new Date(endStr);
   let workingDays = 0;
@@ -743,7 +586,8 @@ app.get("/api/stats/series", async (req, res) => {
   const start = normalizeDate(req.query.start);
   const end = normalizeDate(req.query.end);
   const dateFilter = buildDateFilter("date", start, end);
-  const revenueProfit = await req.db.all(
+
+  const revenueProfit = await query(
     `
     SELECT date AS label,
            COALESCE(SUM(sale), 0) AS revenue,
@@ -757,26 +601,24 @@ app.get("/api/stats/series", async (req, res) => {
     dateFilter.params
   );
 
-  const monthlyActual = await req.db.all(
+  const monthlyActual = await query(
     `
-    SELECT strftime('%Y-%m', date) AS label,
+    SELECT to_char(date, 'YYYY-MM') AS label,
            COALESCE(SUM(sale), 0) AS revenue,
            COALESCE(SUM(profit), 0) AS profit,
            COUNT(*) AS orders
     FROM orders
     WHERE 1=1
     ${dateFilter.clause}
-    GROUP BY strftime('%Y-%m', date)
+    GROUP BY to_char(date, 'YYYY-MM')
     ORDER BY label ASC
   `,
     dateFilter.params
   );
 
-  const manualMonths = await req.db.all(`
-    SELECT month AS label, revenue, profit, orders
-    FROM manual_months
-    ORDER BY month ASC
-  `);
+  const manualMonths = await query(
+    `SELECT month AS label, revenue, profit, orders FROM manual_months ORDER BY month ASC`
+  );
 
   const monthlyMap = new Map();
   for (const m of monthlyActual) {
@@ -795,28 +637,35 @@ app.get("/api/stats/series", async (req, res) => {
     });
   }
 
-  const suppliers = await req.db.all(`
+  const suppliers = await query(
+    `
     SELECT name, balance
     FROM suppliers
     ORDER BY balance DESC
     LIMIT 7
-  `);
+  `
+  );
 
-  const suppliersPerf = await req.db.all(`
+  const suppliersPerf = await query(
+    `
     SELECT s.name,
            COALESCE(SUM(o.sale), 0) AS revenue,
            COALESCE(SUM(o.profit), 0) AS profit
     FROM suppliers s
     LEFT JOIN orders o ON o.supplier_id = s.id
+    WHERE 1=1
+    ${dateFilter.clause.replace(/date/g, "o.date")}
     GROUP BY s.id
     ORDER BY profit DESC
-  `);
+  `,
+    dateFilter.params
+  );
 
-  const totalsRow = await req.db.get(
+  const totalsRow = await one(
     `SELECT COALESCE(SUM(sale),0) AS revenue, COALESCE(SUM(profit),0) AS profit, COUNT(*) AS orders FROM orders WHERE 1=1 ${dateFilter.clause}`,
     dateFilter.params
   );
-  const overallAvgCheck = totalsRow.orders ? round2(totalsRow.revenue / totalsRow.orders) : 0;
+  const overallAvgCheck = totalsRow?.orders ? round2(toNumber(totalsRow.revenue) / Number(totalsRow.orders)) : 0;
 
   res.json({
     revenueProfit: revenueProfit.map(r => ({
@@ -828,29 +677,25 @@ app.get("/api/stats/series", async (req, res) => {
       label: m.label,
       revenue: round2(m.revenue),
       profit: round2(m.profit),
-      orders: m.orders,
-      avgCheck: m.orders ? round2(m.revenue / m.orders) : 0,
+      orders: Number(m.orders) || 0,
       margin: round2(m.revenue ? (m.profit / m.revenue) * 100 : 0)
     })),
-    suppliers: suppliers.map(s => ({ name: s.name, balance: round2(s.balance) })),
+    suppliers: suppliers.map(s => ({
+      label: s.name,
+      value: round2(s.balance)
+    })),
     suppliersPerf: suppliersPerf.map(s => ({
-      name: s.name,
+      label: s.name,
       revenue: round2(s.revenue),
       profit: round2(s.profit),
       margin: round2(s.revenue ? (s.profit / s.revenue) * 100 : 0)
     })),
-    overall: {
-      revenue: round2(totalsRow.revenue),
-      profit: round2(totalsRow.profit),
-      orders: totalsRow.orders,
-      avgCheck: overallAvgCheck
-    }
+    avgCheck: overallAvgCheck
   });
 });
 
-// Manual monthly entries
-app.get("/api/stats/manual-months", async (req, res) => {
-  const rows = await req.db.all("SELECT * FROM manual_months ORDER BY month DESC");
+app.get("/api/stats/manual-months", async (_req, res) => {
+  const rows = await query(`SELECT * FROM manual_months ORDER BY month DESC`);
   res.json(rows);
 });
 
@@ -862,10 +707,15 @@ app.post("/api/stats/manual-months", async (req, res) => {
     const prof = toNumber(profit);
     const ord = Number.isInteger(orders) ? orders : Number(orders) || 0;
 
-    await req.db.run(
-      `INSERT INTO manual_months (month, revenue, profit, orders)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(month) DO UPDATE SET revenue=excluded.revenue, profit=excluded.profit, orders=excluded.orders`,
+    await none(
+      `
+      INSERT INTO manual_months (month, revenue, profit, orders)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (month) DO UPDATE
+        SET revenue = EXCLUDED.revenue,
+            profit = EXCLUDED.profit,
+            orders = EXCLUDED.orders
+    `,
       [month, rev, prof, ord]
     );
     res.json({ ok: true });
@@ -875,12 +725,15 @@ app.post("/api/stats/manual-months", async (req, res) => {
   }
 });
 
-// fallback
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, "..", "public", "index.html"));
 });
 
-// start
-app.listen(PORT, () => {
-  console.log("SERVER RUNNING → http://localhost:" + PORT);
+ensureTables().then(() => {
+  app.listen(PORT, () => {
+    console.log("SERVER RUNNING → http://localhost:" + PORT);
+  });
+}).catch(err => {
+  console.error("Failed to init tables:", err);
+  process.exit(1);
 });
