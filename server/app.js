@@ -752,25 +752,13 @@ app.get("*", (req, res) => {
   res.status(404).send("Not Found");
 });
 
-let server;
-
 ensureTables()
   .then(() => {
-    server = app.listen(PORT, () => {
-      console.log("Server running on port", PORT);
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log("SERVER RUNNING on port", PORT);
     });
   })
   .catch(err => {
     console.error("Failed to init tables:", err);
     process.exit(1);
   });
-
-process.on("SIGTERM", () => {
-  if (server) {
-    server.close(() => {
-      process.exit(0);
-    });
-  } else {
-    process.exit(0);
-  }
-});
