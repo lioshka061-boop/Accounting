@@ -15,7 +15,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/", (_req, res) => {
-  res.send("Server is working");
+  res.send("OK");
 });
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -752,13 +752,25 @@ app.get("*", (req, res) => {
   res.status(404).send("Not Found");
 });
 
+let server;
+
 ensureTables()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(`SERVER RUNNING on port ${PORT}`);
+    server = app.listen(PORT, () => {
+      console.log("Server running on port", PORT);
     });
   })
   .catch(err => {
     console.error("Failed to init tables:", err);
     process.exit(1);
   });
+
+process.on("SIGTERM", () => {
+  if (server) {
+    server.close(() => {
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
+});

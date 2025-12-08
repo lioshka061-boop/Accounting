@@ -3,26 +3,15 @@ import pg from "pg";
 
 const { Pool } = pg;
 
-let connectionString = process.env.DATABASE_URL;
+const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {
-  const {
-    PGHOST = "localhost",
-    PGUSER = "",
-    PGPASSWORD = "",
-    PGDATABASE = "",
-    PGPORT = "5432"
-  } = process.env;
-  connectionString = `postgres://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}`;
+  throw new Error("DATABASE_URL is not set");
 }
-
-const isLocal =
-  connectionString.includes("localhost") ||
-  connectionString.includes("127.0.0.1");
 
 const pool = new Pool({
   connectionString,
-  ssl: isLocal ? false : { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false }
 });
 
 export async function query(text, params) {
