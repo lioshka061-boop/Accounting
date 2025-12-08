@@ -51,7 +51,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // ---- Serve frontend ----
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "..", "public")));
 
 // ======== DB INIT =========
 async function initDB() {
@@ -877,7 +877,7 @@ app.post("/api/stats/manual-months", async (req, res) => {
 
 // fallback
 app.use((req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(path.join(__dirname, "..", "public", "index.html"));
 });
 
 // start
