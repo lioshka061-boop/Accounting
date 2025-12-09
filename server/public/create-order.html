@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <title>Створити замовлення</title>
+
+  <link rel="stylesheet" href="/styles.css" />
+  <script defer src="/main.js"></script>
+
+</head>
+
+<body>
+
+<div class="mobile-header">
+  <button class="burger-btn">☰</button>
+  <div class="mobile-title">Нове замовлення</div>
+</div>
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <h2>Панель</h2>
+    <a href="/orders.html">Замовлення</a>
+    <a href="/create-order.html" class="active">Нове замовлення</a>
+    <a href="/suppliers.html">Постачальники</a>
+    <a href="/stats.html">Статистика</a>
+    <a href="/index.html">Головна</a>
+  </div>
+  <div class="sidebar-backdrop"></div>
+
+  <!-- MAIN -->
+  <div class="content">
+    <div class="page-header">
+      <h1>Створити замовлення</h1>
+      <p class="subtitle">Заповніть поля, щоб додати нове замовлення до обліку.</p>
+    </div>
+
+    <div class="form-card">
+      <label>Номер замовлення</label>
+      <input id="order-number" placeholder="Наприклад: №20331" />
+
+      <label>Назва / опис товару</label>
+      <input id="order-title" placeholder="Що продаємо?" />
+
+      <label>Нотатка</label>
+      <input id="order-note" placeholder="Додаткова інформація" />
+
+      <label>Дата</label>
+      <input type="date" id="order-date" />
+
+      <label>Вартість продажу</label>
+      <input type="number" id="order-sale" placeholder="Наприклад: 1500" />
+
+      <label>Опт</label>
+      <input type="number" id="order-cost" placeholder="Оптова ціна" />
+
+      <label>ProSale</label>
+      <input type="number" id="order-prosail" placeholder="Комісія ProSale" />
+
+      <label>Передплата</label>
+      <input type="number" id="order-prepay" placeholder="Сума передплати" />
+
+      <label>Постачальник</label>
+      <select id="order-supplier"></select>
+
+      <label>Джерело трафіку</label>
+      <select id="order-source">
+        <option value="">Не вказано</option>
+        <option value="Пром">Пром</option>
+        <option value="ОЛХ">ОЛХ</option>
+        <option value="Сайт (SEO)">Сайт (SEO)</option>
+        <option value="Трубка">Трубка</option>
+        <option value="Клієнтська база">Клієнтська база</option>
+        <option value="Повторне замовлення">Повторне замовлення</option>
+        <option value="Сарафанка">Сарафанка</option>
+      </select>
+
+      <label>Статус</label>
+      <select id="order-status">
+        <option value="Прийнято">Прийнято</option>
+        <option value="Виконано">Виконано</option>
+        <option value="Під замовлення">Під замовлення</option>
+        <option value="Відмова">Відмова</option>
+        <option value="Повернення">Повернення</option>
+        <option value="Скасовано">Скасовано</option>
+      </select>
+
+      <label>Причина скасування / коментар</label>
+      <input id="order-cancel-reason" placeholder="Причина (за потреби)" />
+
+      <div class="checkbox-row">
+        <label><input type="checkbox" id="promoPay" /> Промоплата</label>
+        <label><input type="checkbox" id="ourTTN" /> Наша ТТН</label>
+        <label><input type="checkbox" id="fromSupplier" /> Відправка від постачальника</label>
+        <label><input type="checkbox" id="isReturn" /> Повернення</label>
+      </div>
+
+      <label>Доставка повернення</label>
+      <input type="number" id="returnDelivery" placeholder="0" />
+
+      <button onclick="addOrder()">Створити</button>
+    </div>
+  </div>
+
+</body>
+</html>
