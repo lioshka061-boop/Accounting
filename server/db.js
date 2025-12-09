@@ -3,16 +3,29 @@ import pg from "pg";
 
 const { Pool } = pg;
 
-const connectionString = process.env.DATABASE_URL;
+// Лог для діагностики, щоб railway НЕ був сліпим
+console.log("DATABASE_URL:", process.env.DATABASE_URL);
 
-if (!connectionString) {
-  throw new Error("DATABASE_URL is not set");
+if (!process.env.DATABASE_URL) {
+  console.error("❌ DATABASE_URL IS MISSING");
+  process.exit(1);
 }
 
 const pool = new Pool({
-  connectionString,
+  connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
+
+// Перевіряємо підключення при старті
+pool.connect()
+  .then(client => {
+    console.log("✅ Connected to PostgreSQL");
+    client.release();
+  })
+  .catch(err => {
+    console.error("❌ PostgreSQL connection error:", err);
+    process.exit(1);
+  });
 
 export async function query(text, params) {
   return pool.query(text, params);
