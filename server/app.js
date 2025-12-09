@@ -762,3 +762,4 @@ ensureTables()
     console.error("Failed to init tables:", err);
     process.exit(1);
   });
+// test commit
