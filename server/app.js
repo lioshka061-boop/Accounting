@@ -68,6 +68,35 @@ async function ensureTables() {
   `);
 
   await query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS promo_pay BOOLEAN DEFAULT FALSE;
+  `);
+  await query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS our_ttn BOOLEAN DEFAULT FALSE;
+  `);
+  await query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS from_supplier BOOLEAN DEFAULT FALSE;
+  `);
+  await query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS is_return BOOLEAN DEFAULT FALSE;
+  `);
+  await query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS return_delivery NUMERIC DEFAULT 0;
+  `);
+  await query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS traffic_source TEXT;
+  `);
+  await query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Прийнято';
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS supplier_adjustments (
       id SERIAL PRIMARY KEY,
       supplier_id INTEGER REFERENCES suppliers(id) ON DELETE CASCADE,
