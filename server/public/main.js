@@ -462,7 +462,7 @@ async function openEditModal(id) {
   document.getElementById("edit-number").value = data.order_number || "";
   document.getElementById("edit-title").value = data.title || "";
   document.getElementById("edit-note").value = data.note || "";
-  document.getElementById("edit-date").value = data.date || "";
+  document.getElementById("edit-date").value = data.date ? String(data.date).slice(0, 10) : "";
   document.getElementById("edit-sale").value = data.sale;
   document.getElementById("edit-cost").value = data.cost;
   document.getElementById("edit-prosail").value = data.prosail;

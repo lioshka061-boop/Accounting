@@ -123,6 +123,36 @@ async function ensureTables() {
   `);
 }
 
+async function recalcExistingOrders() {
+  const res = await query("SELECT * FROM orders");
+  for (const row of res.rows) {
+    const payload = {
+      sale: row.sale,
+      cost: row.cost,
+      prosail: row.prosail,
+      prepay: row.prepay,
+      returnDelivery: row.return_delivery,
+      isReturn: row.is_return,
+      promoPay: row.promo_pay,
+      ourTTN: row.our_ttn,
+      fromSupplier: row.from_supplier,
+      status: row.status
+    };
+
+    const fin = computeFinancials(payload);
+
+    let completedAt = row.completed_at;
+    if (!completedAt && row.status === "Виконано") {
+      completedAt = row.date || new Date().toISOString();
+    }
+
+    await query(
+      "UPDATE orders SET profit = $1, supplier_balance_change = $2, completed_at = $3 WHERE id = $4",
+      [fin.profit, fin.supplier_balance_change, completedAt, row.id]
+    );
+  }
+}
+
 function toNumber(val) {
   const n = Number(val);
   return Number.isFinite(n) ? n : 0;
@@ -921,9 +951,10 @@ app.get("/api/test", async (req, res) => {
   }
 });
 
-// Start server after ensuring tables
+// Start server after ensuring tables and recalculating existing orders
 
 ensureTables()
+  .then(() => recalcExistingOrders())
   .then(() => {
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`SERVER RUNNING on port ${PORT}`);
