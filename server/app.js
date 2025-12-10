@@ -203,23 +203,12 @@ app.get("/api/suppliers", async (req, res) => {
       SELECT
         s.id,
         s.name,
-        COALESCE(calc.total_change, 0) AS real_balance
+        COALESCE(SUM(o.supplier_balance_change), 0) +
+        COALESCE(SUM(a.amount), 0) AS balance
       FROM suppliers s
-      LEFT JOIN (
-        SELECT
-          base.supplier_id,
-          COALESCE(base.sum_change, 0) + COALESCE(adj.sum_adjust, 0) AS total_change
-        FROM (
-          SELECT supplier_id, SUM(supplier_balance_change) AS sum_change
-          FROM orders
-          GROUP BY supplier_id
-        ) base
-        LEFT JOIN (
-          SELECT supplier_id, SUM(amount) AS sum_adjust
-          FROM supplier_adjustments
-          GROUP BY supplier_id
-        ) adj ON adj.supplier_id = base.supplier_id
-      ) calc ON calc.supplier_id = s.id
+      LEFT JOIN orders o ON o.supplier_id = s.id
+      LEFT JOIN supplier_adjustments a ON a.supplier_id = s.id
+      GROUP BY s.id, s.name
       ORDER BY s.id ASC
       `
     );
@@ -310,6 +299,32 @@ function buildDateFilter(queryObj, params) {
   return where.length ? "WHERE " + where.join(" AND ") : "";
 }
 
+function mapOrderRow(row) {
+  return {
+    id: row.id,
+    order_number: row.order_number,
+    title: row.title,
+    note: row.note,
+    date: row.date,
+    sale: Number(row.sale ?? 0),
+    cost: Number(row.cost ?? 0),
+    prosail: Number(row.prosail ?? 0),
+    prepay: Number(row.prepay ?? 0),
+    supplier_id: row.supplier_id,
+    promoPay: row.promo_pay,
+    ourTTN: row.our_ttn,
+    fromSupplier: row.from_supplier,
+    isReturn: row.is_return,
+    returnDelivery: Number(row.return_delivery ?? 0),
+    traffic_source: row.traffic_source,
+    status: row.status,
+    cancel_reason: row.cancel_reason,
+    profit: Number(row.profit ?? 0),
+    supplier_balance_change: Number(row.supplier_balance_change ?? 0),
+    supplier_name: row.supplier_name
+  };
+}
+
 app.get("/api/orders", async (req, res) => {
   try {
     const params = [];
@@ -327,7 +342,7 @@ app.get("/api/orders", async (req, res) => {
       ORDER BY o.date DESC NULLS LAST, o.id DESC
     `;
     const result = await query(sql, params);
-    res.json(result.rows);
+    res.json(result.rows.map(mapOrderRow));
   } catch (err) {
     console.error("GET /api/orders error:", err);
     res.status(500).json({ error: "Failed to load orders" });
@@ -350,7 +365,7 @@ app.get("/api/orders/:id", async (req, res) => {
     if (!result.rows.length) {
       return res.status(404).json({ error: "Order not found" });
     }
-    res.json(result.rows[0]);
+    res.json(mapOrderRow(result.rows[0]));
   } catch (err) {
     console.error("GET /api/orders/:id error:", err);
     res.status(500).json({ error: "Failed to load order" });

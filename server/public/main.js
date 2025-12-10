@@ -83,7 +83,7 @@ async function loadSuppliers() {
     if (adjustSelect) {
       adjustSelect.innerHTML = "";
       suppliers.forEach(s => {
-        const bal = Number(s.real_balance ?? s.balance ?? 0);
+        const bal = Number(s.balance ?? 0);
         let opt = document.createElement("option");
         opt.value = s.id;
         opt.textContent = `${s.name} (баланс: ${MONEY(bal)})`;
@@ -95,7 +95,7 @@ async function loadSuppliers() {
       table.innerHTML = "";
       suppliers.forEach(s => {
         const row = document.createElement("tr");
-        const bal = Number(s.real_balance ?? s.balance ?? 0);
+        const bal = Number(s.balance ?? 0);
         const status =
           bal > 0 ? `Він нам винен ${MONEY(bal)} грн` :
           bal < 0 ? `Ми винні ${MONEY(Math.abs(bal))} грн` :
