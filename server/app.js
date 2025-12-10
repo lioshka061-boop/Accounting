@@ -83,6 +83,19 @@ function toNumber(val) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function normalizeDate(val) {
+  if (!val) return null;
+  // If already ISO-like (yyyy-mm-dd), return as is
+  if (/^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10);
+  // If in format dd.mm.yyyy – convert
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(val)) {
+    const [dd, mm, yyyy] = val.split(".");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  // Fallback: let Postgres try to parse
+  return val;
+}
+
 function computeFinancials(payload) {
   const sale = toNumber(payload.sale);
   const cost = toNumber(payload.cost);
@@ -171,10 +184,17 @@ app.post("/api/suppliers/:id/adjust", async (req, res) => {
       "UPDATE suppliers SET balance = $1 WHERE id = $2",
       [newBalance, supplierId]
     );
-    await query(
-      "INSERT INTO supplier_adjustments(supplier_id, kind, amount, note) VALUES($1,$2,$3,$4)",
-      [supplierId, kind, amt, note || ""]
-    );
+
+    // Adjustment history is optional: if table/schema differs from expectation,
+    // логіку балансу не ламаємо.
+    try {
+      await query(
+        "INSERT INTO supplier_adjustments(supplier_id, kind, amount, note) VALUES($1,$2,$3,$4)",
+        [supplierId, kind, amt, note || ""]
+      );
+    } catch (historyErr) {
+      console.error("supplier_adjustments insert error (ignored):", historyErr);
+    }
 
     res.json({ ok: true });
   } catch (err) {
@@ -281,7 +301,7 @@ app.post("/api/orders", async (req, res) => {
       payload.order_number || null,
       payload.title || null,
       payload.note || null,
-      payload.date || null,
+      normalizeDate(payload.date),
       fin.sale,
       fin.cost,
       fin.prosail,
@@ -359,7 +379,7 @@ app.put("/api/orders/:id", async (req, res) => {
       payload.order_number || null,
       payload.title || null,
       payload.note || null,
-      payload.date || null,
+      normalizeDate(payload.date),
       fin.sale,
       fin.cost,
       fin.prosail,
