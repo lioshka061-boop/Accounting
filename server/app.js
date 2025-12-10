@@ -154,32 +154,15 @@ async function recalcExistingOrders() {
 }
 
 async function recalcSupplierBalances() {
-  // Перераховуємо suppliers.balance з orders + manual adjustments
-  const agg = await query(
-    `
-    SELECT
-      s.id AS supplier_id,
-      COALESCE(o.sum_change, 0) + COALESCE(a.sum_adjust, 0) AS balance
-    FROM suppliers s
-    LEFT JOIN (
-      SELECT supplier_id, SUM(supplier_balance_change) AS sum_change
-      FROM orders
-      GROUP BY supplier_id
-    ) o ON o.supplier_id = s.id
-    LEFT JOIN (
-      SELECT supplier_id, SUM(amount) AS sum_adjust
-      FROM supplier_adjustments
-      GROUP BY supplier_id
-    ) a ON a.supplier_id = s.id
-    `
-  );
-
-  for (const row of agg.rows) {
-    await query(
-      "UPDATE suppliers SET balance = $1 WHERE id = $2",
-      [row.balance, row.supplier_id]
-    );
-  }
+  // Перераховуємо suppliers.balance як суму всіх supplier_balance_change з orders.
+  await query(`
+    UPDATE suppliers s
+    SET balance = COALESCE((
+      SELECT SUM(supplier_balance_change)
+      FROM orders o
+      WHERE o.supplier_id = s.id
+    ), 0)
+  `);
 }
 
 function toNumber(val) {
@@ -297,6 +280,26 @@ app.post("/api/suppliers/:id/adjust", async (req, res) => {
   }
 
   try {
+    const currentRes = await query(
+      "SELECT balance FROM suppliers WHERE id = $1",
+      [supplierId]
+    );
+    if (!currentRes.rows.length) {
+      return res.status(404).json({ error: "Supplier not found" });
+    }
+
+    let newBalance;
+    if (kind === "set") {
+      newBalance = amt;
+    } else {
+      newBalance = toNumber(currentRes.rows[0].balance) + amt;
+    }
+
+    await query(
+      "UPDATE suppliers SET balance = $1 WHERE id = $2",
+      [newBalance, supplierId]
+    );
+
     await query(
       "INSERT INTO supplier_adjustments(supplier_id, kind, amount, note) VALUES($1,$2,$3,$4)",
       [supplierId, kind, amt, note || ""]
