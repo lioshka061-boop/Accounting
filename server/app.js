@@ -152,39 +152,31 @@ app.post("/api/suppliers/:id/adjust", async (req, res) => {
   }
 
   try {
-    const client = await query("BEGIN");
-    try {
-      const currentRes = await query(
-        "SELECT balance FROM suppliers WHERE id = $1 FOR UPDATE",
-        [supplierId]
-      );
-      if (!currentRes.rows.length) {
-        await query("ROLLBACK");
-        return res.status(404).json({ error: "Supplier not found" });
-      }
-
-      let newBalance;
-      if (kind === "set") {
-        newBalance = amt;
-      } else {
-        newBalance = toNumber(currentRes.rows[0].balance) + amt;
-      }
-
-      await query(
-        "UPDATE suppliers SET balance = $1 WHERE id = $2",
-        [newBalance, supplierId]
-      );
-      await query(
-        "INSERT INTO supplier_adjustments(supplier_id, kind, amount, note) VALUES($1,$2,$3,$4)",
-        [supplierId, kind, amt, note || ""]
-      );
-
-      await query("COMMIT");
-      res.json({ ok: true });
-    } catch (err) {
-      await query("ROLLBACK");
-      throw err;
+    const currentRes = await query(
+      "SELECT balance FROM suppliers WHERE id = $1",
+      [supplierId]
+    );
+    if (!currentRes.rows.length) {
+      return res.status(404).json({ error: "Supplier not found" });
     }
+
+    let newBalance;
+    if (kind === "set") {
+      newBalance = amt;
+    } else {
+      newBalance = toNumber(currentRes.rows[0].balance) + amt;
+    }
+
+    await query(
+      "UPDATE suppliers SET balance = $1 WHERE id = $2",
+      [newBalance, supplierId]
+    );
+    await query(
+      "INSERT INTO supplier_adjustments(supplier_id, kind, amount, note) VALUES($1,$2,$3,$4)",
+      [supplierId, kind, amt, note || ""]
+    );
+
+    res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/suppliers/:id/adjust error:", err);
     res.status(500).json({ error: "Failed to adjust supplier" });
@@ -227,6 +219,29 @@ app.get("/api/orders", async (req, res) => {
   } catch (err) {
     console.error("GET /api/orders error:", err);
     res.status(500).json({ error: "Failed to load orders" });
+  }
+});
+
+app.get("/api/orders/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid id" });
+
+  try {
+    const sql = `
+      SELECT o.*,
+             s.name AS supplier_name
+      FROM orders o
+      LEFT JOIN suppliers s ON s.id = o.supplier_id
+      WHERE o.id = $1
+    `;
+    const result = await query(sql, [id]);
+    if (!result.rows.length) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("GET /api/orders/:id error:", err);
+    res.status(500).json({ error: "Failed to load order" });
   }
 });
 
