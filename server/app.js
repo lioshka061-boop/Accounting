@@ -148,7 +148,7 @@ async function recalcExistingOrders() {
 
     await query(
       "UPDATE orders SET profit = $1, supplier_balance_change = $2, completed_at = $3 WHERE id = $4",
-      [fin.profit, fin.supplier_balance_change, completedAt, row.id]
+      [fin.profit, fin.supplierBalanceChange, completedAt, row.id]
     );
   }
 }
