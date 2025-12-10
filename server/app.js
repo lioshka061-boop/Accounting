@@ -174,12 +174,15 @@ function computeFinancials(payload) {
       profit = fullProfit;
 
       // Баланс постачальника.
-      // Промоплата або наша ТТН -> ми винні опт.
-      // Відправка від постачальника (його ТТН) -> постачальник винен нам маржу.
+      // Від постачальника: постачальник винен нам маржу (sale - cost).
+      // Якщо маржа від'ємна (sale < cost) — ми винні йому різницю.
+      // Інакше: при промоплаті або нашій ТТН ми винні опт.
       if (fromSupplier) {
-        supplierBalanceChange = sale - cost; // постачальник нам винен
+        supplierBalanceChange = sale - cost;
+      } else if (promoPay || ourTTN) {
+        supplierBalanceChange = -cost;
       } else {
-        supplierBalanceChange = -cost; // ми винні постачальнику
+        supplierBalanceChange = -cost;
       }
     }
   }
