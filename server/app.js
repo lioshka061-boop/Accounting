@@ -153,6 +153,35 @@ async function recalcExistingOrders() {
   }
 }
 
+async function recalcSupplierBalances() {
+  // Перераховуємо suppliers.balance з orders + manual adjustments
+  const agg = await query(
+    `
+    SELECT
+      s.id AS supplier_id,
+      COALESCE(o.sum_change, 0) + COALESCE(a.sum_adjust, 0) AS balance
+    FROM suppliers s
+    LEFT JOIN (
+      SELECT supplier_id, SUM(supplier_balance_change) AS sum_change
+      FROM orders
+      GROUP BY supplier_id
+    ) o ON o.supplier_id = s.id
+    LEFT JOIN (
+      SELECT supplier_id, SUM(amount) AS sum_adjust
+      FROM supplier_adjustments
+      GROUP BY supplier_id
+    ) a ON a.supplier_id = s.id
+    `
+  );
+
+  for (const row of agg.rows) {
+    await query(
+      "UPDATE suppliers SET balance = $1 WHERE id = $2",
+      [row.balance, row.supplier_id]
+    );
+  }
+}
+
 function toNumber(val) {
   const n = Number(val);
   return Number.isFinite(n) ? n : 0;
@@ -232,24 +261,7 @@ function computeFinancials(payload) {
 app.get("/api/suppliers", async (req, res) => {
   try {
     const result = await query(
-      `
-      SELECT
-        s.id,
-        s.name,
-        COALESCE(o.sum_change, 0) + COALESCE(a.sum_adjust, 0) AS balance
-      FROM suppliers s
-      LEFT JOIN (
-        SELECT supplier_id, SUM(supplier_balance_change) AS sum_change
-        FROM orders
-        GROUP BY supplier_id
-      ) o ON o.supplier_id = s.id
-      LEFT JOIN (
-        SELECT supplier_id, SUM(amount) AS sum_adjust
-        FROM supplier_adjustments
-        GROUP BY supplier_id
-      ) a ON a.supplier_id = s.id
-      ORDER BY s.id ASC
-      `
+      "SELECT id, name, COALESCE(balance, 0) AS balance FROM suppliers ORDER BY id ASC"
     );
     res.json(result.rows);
   } catch (err) {
@@ -619,27 +631,7 @@ app.get("/api/stats/profit", async (req, res) => {
 app.get("/api/stats/debts", async (req, res) => {
   try {
     const result = await query(
-      `
-      SELECT
-        COALESCE(SUM(bal) FILTER (WHERE bal > 0), 0) AS suppliers_owe,
-        COALESCE(SUM(bal) FILTER (WHERE bal < 0), 0) AS we_owe
-      FROM (
-        SELECT
-          s.id,
-          COALESCE(o.sum_change, 0) + COALESCE(a.sum_adjust, 0) AS bal
-        FROM suppliers s
-        LEFT JOIN (
-          SELECT supplier_id, SUM(supplier_balance_change) AS sum_change
-          FROM orders
-          GROUP BY supplier_id
-        ) o ON o.supplier_id = s.id
-        LEFT JOIN (
-          SELECT supplier_id, SUM(amount) AS sum_adjust
-          FROM supplier_adjustments
-          GROUP BY supplier_id
-        ) a ON a.supplier_id = s.id
-      ) t
-      `
+      "SELECT COALESCE(SUM(balance) FILTER (WHERE balance > 0),0) AS suppliers_owe, COALESCE(SUM(balance) FILTER (WHERE balance < 0),0) AS we_owe FROM suppliers"
     );
     const row = result.rows[0] || {};
     const suppliersOwe = Number(row.suppliers_owe || 0);
@@ -936,10 +928,11 @@ app.get("/api/test", async (req, res) => {
   }
 });
 
-// Start server after ensuring tables and recalculating existing orders
+// Start server after ensuring tables and recalculating existing data
 
 ensureTables()
   .then(() => recalcExistingOrders())
+  .then(() => recalcSupplierBalances())
   .then(() => {
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`SERVER RUNNING on port ${PORT}`);
