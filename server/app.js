@@ -657,7 +657,7 @@ app.get("/api/stats/series", async (req, res) => {
     const revenueProfitRes = await query(
       `
       SELECT
-        date::date AS day,
+        to_char(date::date, 'YYYY-MM-DD') AS day,
         COALESCE(SUM(sale),0) AS revenue,
         COALESCE(SUM(profit),0) AS profit
       FROM orders
@@ -692,7 +692,8 @@ app.get("/api/stats/series", async (req, res) => {
       SELECT
         s.name,
         COALESCE(SUM(o.sale),0) AS revenue,
-        COALESCE(SUM(o.profit),0) AS profit
+        COALESCE(SUM(o.profit),0) AS profit,
+        COUNT(*) AS orders
       FROM orders o
       LEFT JOIN suppliers s ON s.id = o.supplier_id
       ${where}
@@ -750,10 +751,13 @@ app.get("/api/stats/series", async (req, res) => {
       const revenue = Number(r.revenue || 0);
       const profit = Number(r.profit || 0);
       const margin = revenue ? (profit / revenue) * 100 : 0;
+      const orders = Number(r.orders || 0);
       return {
         name: r.name || "Невідомий",
+        revenue,
         profit,
-        margin
+        margin,
+        orders
       };
     });
 

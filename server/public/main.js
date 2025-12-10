@@ -7,6 +7,19 @@ const MONEY = (val) => {
     maximumFractionDigits: 2
   });
 };
+
+const formatDateDisplay = (val) => {
+  if (!val) return "-";
+  try {
+    const d = new Date(val);
+    if (Number.isNaN(d.getTime())) {
+      return String(val).slice(0, 10);
+    }
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return String(val).slice(0, 10);
+  }
+};
 let chartProfit;
 let chartRevenue;
 let chartSuppliers;
@@ -323,7 +336,7 @@ function renderOrders(orders) {
     row.innerHTML = `
       <td>${o.id}</td>
       <td>${o.order_number || "-"}</td>
-      <td>${o.date || "-"}</td>
+      <td>${formatDateDisplay(o.date)}</td>
       <td>${o.title || "-"} ${isReturnBadge}</td>
       <td>${o.traffic_source || "-"}</td>
       <td>
@@ -637,7 +650,7 @@ function renderCharts(series) {
   }
   const { revenueProfit = [], suppliers = [], monthly = [], suppliersPerf = [] } = series || {};
 
-  const labels = revenueProfit.map(r => r.label);
+  const labels = revenueProfit.map(r => formatDateDisplay(r.label));
   const profitData = revenueProfit.map(r => r.profit);
   const revenueData = revenueProfit.map(r => r.revenue);
 
@@ -799,12 +812,43 @@ function renderCharts(series) {
       },
       options: {
         indexAxis: "y",
-        plugins: { legend: { labels: { color: "#e9ecff" } } },
+        plugins: {
+          legend: { labels: { color: "#e9ecff" } },
+          tooltip: {
+            callbacks: {
+              afterBody(items) {
+                const idx = items[0].dataIndex;
+                const s = suppliersPerf[idx];
+                return [
+                  `Замовлень: ${s.orders}`,
+                  `Оборот: ${MONEY(s.revenue)} ₴`
+                ];
+              }
+            }
+          }
+        },
         scales: {
           x: { ticks: { color: "#cfd3ea" }, grid: { color: "rgba(255,255,255,0.05)" } },
           y: { ticks: { color: "#cfd3ea" }, grid: { display: false } }
         }
       }
+    });
+  }
+
+  // Suppliers summary table
+  const supTable = document.querySelector("#suppliers-summary tbody");
+  if (supTable) {
+    supTable.innerHTML = "";
+    suppliersPerf.forEach(s => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${s.name}</td>
+        <td>${s.orders}</td>
+        <td>${MONEY(s.revenue)} ₴</td>
+        <td>${MONEY(s.profit)} ₴</td>
+        <td>${s.margin.toFixed(2)} %</td>
+      `;
+      supTable.appendChild(tr);
     });
   }
 
