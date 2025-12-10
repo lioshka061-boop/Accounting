@@ -83,9 +83,10 @@ async function loadSuppliers() {
     if (adjustSelect) {
       adjustSelect.innerHTML = "";
       suppliers.forEach(s => {
+        const bal = Number(s.real_balance ?? s.balance ?? 0);
         let opt = document.createElement("option");
         opt.value = s.id;
-        opt.textContent = `${s.name} (баланс: ${MONEY(s.balance)})`;
+        opt.textContent = `${s.name} (баланс: ${MONEY(bal)})`;
         adjustSelect.appendChild(opt);
       });
     }
@@ -94,9 +95,10 @@ async function loadSuppliers() {
       table.innerHTML = "";
       suppliers.forEach(s => {
         const row = document.createElement("tr");
+        const bal = Number(s.real_balance ?? s.balance ?? 0);
         const status =
-          s.balance > 0 ? `Він нам винен ${s.balance} грн` :
-          s.balance < 0 ? `Ми винні ${Math.abs(s.balance)} грн` :
+          bal > 0 ? `Він нам винен ${MONEY(bal)} грн` :
+          bal < 0 ? `Ми винні ${MONEY(Math.abs(bal))} грн` :
           "0 грн";
 
         row.innerHTML = `
@@ -294,10 +296,11 @@ function renderOrders(orders) {
   if (cards) cards.innerHTML = "";
 
   orders.forEach(o => {
+    const change = Number(o.supplier_balance_change ?? 0);
     const debt =
-      o.supplier_balance > 0 ? `Він нам: ${MONEY(o.supplier_balance)}` :
-      o.supplier_balance < 0 ? `Ми винні: ${MONEY(Math.abs(o.supplier_balance))}` :
-      "0";
+      change > 0 ? `Він нам: ${MONEY(change)}` :
+      change < 0 ? `Ми винні: ${MONEY(Math.abs(change))}` :
+      "0 грн";
 
     const isReturnBadge = o.isReturn ? `<div style="color:#ff9f43;font-weight:700;font-size:12px;">Повернення</div>` : "";
     const statusBadge = o.status ? `<div style="color:#9fb4ff;font-weight:600;font-size:12px;">${o.status}</div>` : "";

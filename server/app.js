@@ -203,17 +203,23 @@ app.get("/api/suppliers", async (req, res) => {
       SELECT
         s.id,
         s.name,
-        COALESCE((
-          SELECT SUM(o.supplier_balance_change)
-          FROM orders o
-          WHERE o.supplier_id = s.id
-        ), 0) +
-        COALESCE((
-          SELECT SUM(a.amount)
-          FROM supplier_adjustments a
-          WHERE a.supplier_id = s.id
-        ), 0) AS balance
+        COALESCE(calc.total_change, 0) AS real_balance
       FROM suppliers s
+      LEFT JOIN (
+        SELECT
+          base.supplier_id,
+          COALESCE(base.sum_change, 0) + COALESCE(adj.sum_adjust, 0) AS total_change
+        FROM (
+          SELECT supplier_id, SUM(supplier_balance_change) AS sum_change
+          FROM orders
+          GROUP BY supplier_id
+        ) base
+        LEFT JOIN (
+          SELECT supplier_id, SUM(amount) AS sum_adjust
+          FROM supplier_adjustments
+          GROUP BY supplier_id
+        ) adj ON adj.supplier_id = base.supplier_id
+      ) calc ON calc.supplier_id = s.id
       ORDER BY s.id ASC
       `
     );
