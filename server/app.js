@@ -49,11 +49,22 @@ async function ensureTables() {
       is_return BOOLEAN DEFAULT FALSE,
       return_delivery NUMERIC DEFAULT 0,
       traffic_source TEXT,
-      status TEXT DEFAULT 'Прийнято',
-      cancel_reason TEXT,
-      profit NUMERIC DEFAULT 0,
-      supplier_balance_change NUMERIC DEFAULT 0
+      status TEXT DEFAULT 'Прийнято'
     );
+  `);
+
+  // Ensure new columns exist on older deployments
+  await query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
+  `);
+  await query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS profit NUMERIC DEFAULT 0;
+  `);
+  await query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS supplier_balance_change NUMERIC DEFAULT 0;
   `);
 
   await query(`
