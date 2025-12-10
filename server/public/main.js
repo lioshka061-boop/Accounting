@@ -96,7 +96,7 @@ async function loadSuppliers() {
       suppliers.forEach(s => {
         const row = document.createElement("tr");
         const bal = Number(s.balance ?? 0);
-        const status =
+        const statusText =
           bal > 0 ? `Він нам винен ${MONEY(bal)} грн` :
           bal < 0 ? `Ми винні ${MONEY(Math.abs(bal))} грн` :
           "0 грн";
@@ -104,7 +104,8 @@ async function loadSuppliers() {
         row.innerHTML = `
           <td>${s.id}</td>
           <td>${s.name}</td>
-          <td>${status}</td>
+          <td>${statusText}</td>
+          <td><button class="danger" onclick="deleteSupplier(${s.id})">🗑</button></td>
         `;
         table.appendChild(row);
       });
@@ -169,6 +170,17 @@ async function adjustSupplier() {
   document.getElementById("adjust-amount").value = "";
   document.getElementById("adjust-note").value = "";
   showSuccess("Операцію проведено");
+  loadSuppliers();
+}
+
+async function deleteSupplier(id) {
+  if (!confirm("Точно видалити постачальника?")) return;
+  const res = await fetch(`${API}/suppliers/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    alert("Не вдалось видалити постачальника");
+    return;
+  }
+  showSuccess("Постачальника видалено");
   loadSuppliers();
 }
 

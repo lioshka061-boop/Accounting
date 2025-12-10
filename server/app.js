@@ -176,7 +176,7 @@ function computeFinancials(payload) {
       // Баланс постачальника.
       // Промоплата або наша ТТН -> ми винні опт.
       // Відправка від постачальника (його ТТН) -> постачальник винен нам маржу.
-      if (fromSupplier && !promoPay && !ourTTN) {
+      if (fromSupplier) {
         supplierBalanceChange = sale - cost; // постачальник нам винен
       } else {
         supplierBalanceChange = -cost; // ми винні постачальнику
@@ -199,18 +199,7 @@ function computeFinancials(payload) {
 app.get("/api/suppliers", async (req, res) => {
   try {
     const result = await query(
-      `
-      SELECT
-        s.id,
-        s.name,
-        COALESCE(SUM(o.supplier_balance_change), 0) +
-        COALESCE(SUM(a.amount), 0) AS balance
-      FROM suppliers s
-      LEFT JOIN orders o ON o.supplier_id = s.id
-      LEFT JOIN supplier_adjustments a ON a.supplier_id = s.id
-      GROUP BY s.id, s.name
-      ORDER BY s.id ASC
-      `
+      "SELECT id, name, COALESCE(balance, 0) AS balance FROM suppliers ORDER BY id ASC"
     );
     res.json(result.rows);
   } catch (err) {
@@ -281,6 +270,31 @@ app.post("/api/suppliers/:id/adjust", async (req, res) => {
   } catch (err) {
     console.error("POST /api/suppliers/:id/adjust error:", err);
     res.status(500).json({ error: "Failed to adjust supplier" });
+  }
+});
+
+app.delete("/api/suppliers/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid supplier id" });
+
+  try {
+    const ordersRes = await query(
+      "SELECT COUNT(*) AS cnt FROM orders WHERE supplier_id = $1",
+      [id]
+    );
+    const count = Number(ordersRes.rows[0].cnt || 0);
+    if (count > 0) {
+      return res
+        .status(400)
+        .json({ error: "Неможливо видалити постачальника: є пов'язані замовлення" });
+    }
+
+    await query("DELETE FROM supplier_adjustments WHERE supplier_id = $1", [id]);
+    await query("DELETE FROM suppliers WHERE id = $1", [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /api/suppliers/:id error:", err);
+    res.status(500).json({ error: "Failed to delete supplier" });
   }
 });
 
