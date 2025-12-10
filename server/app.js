@@ -112,6 +112,12 @@ async function ensureTables() {
     );
   `);
 
+  // На всяк випадок додаємо відсутні колонки в уже існуючій таблиці supplier_adjustments
+  await query(`
+    ALTER TABLE supplier_adjustments
+      ADD COLUMN IF NOT EXISTS amount NUMERIC DEFAULT 0;
+  `);
+
   await query(`
     CREATE TABLE IF NOT EXISTS manual_months (
       id SERIAL PRIMARY KEY,
