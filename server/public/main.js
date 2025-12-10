@@ -1,5 +1,12 @@
 const API = "/api";
-const MONEY = (val) => (Number(val ?? 0)).toFixed(2);
+const MONEY = (val) => {
+  const num = Number(val ?? 0);
+  if (!Number.isFinite(num)) return "0.00";
+  return num.toLocaleString("uk-UA", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
 let chartProfit;
 let chartRevenue;
 let chartSuppliers;

@@ -97,6 +97,11 @@ async function ensureTables() {
   `);
 
   await query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS supplier_adjustments (
       id SERIAL PRIMARY KEY,
       supplier_id INTEGER REFERENCES suppliers(id) ON DELETE CASCADE,
@@ -140,8 +145,13 @@ function computeFinancials(payload) {
   const sale = toNumber(payload.sale);
   const cost = toNumber(payload.cost);
   const prosail = toNumber(payload.prosail);
+  const prepay = toNumber(payload.prepay);
   const returnDelivery = toNumber(payload.returnDelivery);
   const isReturn = !!payload.isReturn;
+  const promoPay = !!payload.promoPay;
+  const ourTTN = !!payload.ourTTN;
+  const fromSupplier = !!payload.fromSupplier;
+  const status = payload.status || "Прийнято";
 
   let profit;
   let supplierBalanceChange;
@@ -150,8 +160,28 @@ function computeFinancials(payload) {
     profit = -returnDelivery;
     supplierBalanceChange = cost;
   } else {
-    profit = sale - cost - prosail;
-    supplierBalanceChange = -cost;
+    const fullProfit = sale - cost - prosail;
+
+    if (status === "Під замовлення") {
+      // Під замовлення:
+      // одразу визнаємо прибуток лише з передплати мінус ProSale,
+      // постачальнику поки що нічого не винні.
+      profit = prepay - prosail;
+      supplierBalanceChange = 0;
+    } else {
+      // Звичайне/виконане замовлення:
+      // повний прибуток: продаж - опт - ProSale
+      profit = fullProfit;
+
+      // Баланс постачальника.
+      // Промоплата або наша ТТН -> ми винні опт.
+      // Відправка від постачальника (його ТТН) -> постачальник винен нам маржу.
+      if (fromSupplier && !promoPay && !ourTTN) {
+        supplierBalanceChange = sale - cost; // постачальник нам винен
+      } else {
+        supplierBalanceChange = -cost; // ми винні постачальнику
+      }
+    }
   }
 
   return {
@@ -313,6 +343,9 @@ app.post("/api/orders", async (req, res) => {
     }
     const fin = computeFinancials(payload);
 
+    const completedAt =
+      payload.status === "Виконано" ? new Date().toISOString() : null;
+
     const insertSql = `
       INSERT INTO orders(
         order_number, title, note, date,
@@ -322,6 +355,7 @@ app.post("/api/orders", async (req, res) => {
         is_return, return_delivery,
         traffic_source,
         status, cancel_reason,
+        completed_at,
         profit, supplier_balance_change
       )
       VALUES(
@@ -332,7 +366,8 @@ app.post("/api/orders", async (req, res) => {
         $13,$14,
         $15,
         $16,$17,
-        $18,$19
+        $18,
+        $19,$20
       )
       RETURNING *;
     `;
@@ -355,6 +390,7 @@ app.post("/api/orders", async (req, res) => {
       payload.traffic_source || null,
       payload.status || "Прийнято",
       payload.cancel_reason || "",
+      completedAt,
       fin.profit,
       fin.supplierBalanceChange
     ];
@@ -379,7 +415,7 @@ app.put("/api/orders/:id", async (req, res) => {
 
   try {
     const existingRes = await query(
-      "SELECT supplier_id, supplier_balance_change FROM orders WHERE id = $1",
+      "SELECT supplier_id, supplier_balance_change, status, completed_at FROM orders WHERE id = $1",
       [id]
     );
     if (!existingRes.rows.length) {
@@ -389,6 +425,18 @@ app.put("/api/orders/:id", async (req, res) => {
 
     const payload = req.body || {};
     const fin = computeFinancials(payload);
+
+    const becameCompleted =
+      existing.status !== "Виконано" && payload.status === "Виконано";
+    const noLongerCompleted =
+      existing.status === "Виконано" && payload.status !== "Виконано";
+
+    let completedAt = existing.completed_at;
+    if (becameCompleted) {
+      completedAt = new Date().toISOString();
+    } else if (noLongerCompleted) {
+      completedAt = null;
+    }
 
     const updateSql = `
       UPDATE orders SET
@@ -409,9 +457,10 @@ app.put("/api/orders/:id", async (req, res) => {
         traffic_source = $15,
         status = $16,
         cancel_reason = $17,
-        profit = $18,
-        supplier_balance_change = $19
-      WHERE id = $20
+        completed_at = $18,
+        profit = $19,
+        supplier_balance_change = $20
+      WHERE id = $21
       RETURNING *;
     `;
 
@@ -433,6 +482,7 @@ app.put("/api/orders/:id", async (req, res) => {
       payload.traffic_source || null,
       payload.status || "Прийнято",
       payload.cancel_reason || "",
+      completedAt,
       fin.profit,
       fin.supplierBalanceChange,
       id
