@@ -199,7 +199,23 @@ function computeFinancials(payload) {
 app.get("/api/suppliers", async (req, res) => {
   try {
     const result = await query(
-      "SELECT id, name, COALESCE(balance, 0) AS balance FROM suppliers ORDER BY id ASC"
+      `
+      SELECT
+        s.id,
+        s.name,
+        COALESCE((
+          SELECT SUM(o.supplier_balance_change)
+          FROM orders o
+          WHERE o.supplier_id = s.id
+        ), 0) +
+        COALESCE((
+          SELECT SUM(a.amount)
+          FROM supplier_adjustments a
+          WHERE a.supplier_id = s.id
+        ), 0) AS balance
+      FROM suppliers s
+      ORDER BY s.id ASC
+      `
     );
     res.json(result.rows);
   } catch (err) {
