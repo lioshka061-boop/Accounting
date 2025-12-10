@@ -232,7 +232,24 @@ function computeFinancials(payload) {
 app.get("/api/suppliers", async (req, res) => {
   try {
     const result = await query(
-      "SELECT id, name, COALESCE(balance, 0) AS balance FROM suppliers ORDER BY id ASC"
+      `
+      SELECT
+        s.id,
+        s.name,
+        COALESCE(o.sum_change, 0) + COALESCE(a.sum_adjust, 0) AS balance
+      FROM suppliers s
+      LEFT JOIN (
+        SELECT supplier_id, SUM(supplier_balance_change) AS sum_change
+        FROM orders
+        GROUP BY supplier_id
+      ) o ON o.supplier_id = s.id
+      LEFT JOIN (
+        SELECT supplier_id, SUM(amount) AS sum_adjust
+        FROM supplier_adjustments
+        GROUP BY supplier_id
+      ) a ON a.supplier_id = s.id
+      ORDER BY s.id ASC
+      `
     );
     res.json(result.rows);
   } catch (err) {
@@ -268,37 +285,10 @@ app.post("/api/suppliers/:id/adjust", async (req, res) => {
   }
 
   try {
-    const currentRes = await query(
-      "SELECT balance FROM suppliers WHERE id = $1",
-      [supplierId]
-    );
-    if (!currentRes.rows.length) {
-      return res.status(404).json({ error: "Supplier not found" });
-    }
-
-    let newBalance;
-    if (kind === "set") {
-      newBalance = amt;
-    } else {
-      newBalance = toNumber(currentRes.rows[0].balance) + amt;
-    }
-
     await query(
-      "UPDATE suppliers SET balance = $1 WHERE id = $2",
-      [newBalance, supplierId]
+      "INSERT INTO supplier_adjustments(supplier_id, kind, amount, note) VALUES($1,$2,$3,$4)",
+      [supplierId, kind, amt, note || ""]
     );
-
-    // Adjustment history is optional: if table/schema differs from expectation,
-    // логіку балансу не ламаємо.
-    try {
-      await query(
-        "INSERT INTO supplier_adjustments(supplier_id, kind, amount, note) VALUES($1,$2,$3,$4)",
-        [supplierId, kind, amt, note || ""]
-      );
-    } catch (historyErr) {
-      console.error("supplier_adjustments insert error (ignored):", historyErr);
-    }
-
     res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/suppliers/:id/adjust error:", err);
@@ -480,12 +470,6 @@ app.post("/api/orders", async (req, res) => {
     ];
 
     const result = await query(insertSql, values);
-
-    await query(
-      "UPDATE suppliers SET balance = COALESCE(balance,0) + $1 WHERE id = $2",
-      [fin.supplierBalanceChange, payload.supplier_id]
-    );
-
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error("POST /api/orders error:", err);
@@ -573,18 +557,6 @@ app.put("/api/orders/:id", async (req, res) => {
     ];
 
     const result = await query(updateSql, values);
-
-    // revert old balance
-    await query(
-      "UPDATE suppliers SET balance = COALESCE(balance,0) - $1 WHERE id = $2",
-      [existing.supplier_balance_change, existing.supplier_id]
-    );
-    // apply new balance
-    await query(
-      "UPDATE suppliers SET balance = COALESCE(balance,0) + $1 WHERE id = $2",
-      [fin.supplierBalanceChange, payload.supplier_id]
-    );
-
     res.json(result.rows[0]);
   } catch (err) {
     console.error("PUT /api/orders/:id error:", err);
@@ -604,14 +576,7 @@ app.delete("/api/orders/:id", async (req, res) => {
     if (!existingRes.rows.length) {
       return res.status(404).json({ error: "Order not found" });
     }
-    const existing = existingRes.rows[0];
-
     await query("DELETE FROM orders WHERE id = $1", [id]);
-    await query(
-      "UPDATE suppliers SET balance = COALESCE(balance,0) - $1 WHERE id = $2",
-      [existing.supplier_balance_change, existing.supplier_id]
-    );
-
     res.json({ ok: true });
   } catch (err) {
     console.error("DELETE /api/orders/:id error:", err);
@@ -654,7 +619,27 @@ app.get("/api/stats/profit", async (req, res) => {
 app.get("/api/stats/debts", async (req, res) => {
   try {
     const result = await query(
-      "SELECT COALESCE(SUM(balance) FILTER (WHERE balance > 0),0) AS suppliers_owe, COALESCE(SUM(balance) FILTER (WHERE balance < 0),0) AS we_owe FROM suppliers"
+      `
+      SELECT
+        COALESCE(SUM(bal) FILTER (WHERE bal > 0), 0) AS suppliers_owe,
+        COALESCE(SUM(bal) FILTER (WHERE bal < 0), 0) AS we_owe
+      FROM (
+        SELECT
+          s.id,
+          COALESCE(o.sum_change, 0) + COALESCE(a.sum_adjust, 0) AS bal
+        FROM suppliers s
+        LEFT JOIN (
+          SELECT supplier_id, SUM(supplier_balance_change) AS sum_change
+          FROM orders
+          GROUP BY supplier_id
+        ) o ON o.supplier_id = s.id
+        LEFT JOIN (
+          SELECT supplier_id, SUM(amount) AS sum_adjust
+          FROM supplier_adjustments
+          GROUP BY supplier_id
+        ) a ON a.supplier_id = s.id
+      ) t
+      `
     );
     const row = result.rows[0] || {};
     const suppliersOwe = Number(row.suppliers_owe || 0);
