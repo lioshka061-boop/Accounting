@@ -58,7 +58,10 @@
     <label>Коментар</label>
     <input type="text" id="adjust-note" placeholder="За що платіж?" />
 
-    <button onclick="adjustSupplier()">Застосувати</button>
+    <div class="flex-row gap-sm" style="margin-top:8px;">
+      <button onclick="adjustSupplier()">Застосувати</button>
+      <button onclick="resetSupplierBalance()">Обнулити баланс</button>
+    </div>
   </div>
 
   <h3>Список постачальників</h3>

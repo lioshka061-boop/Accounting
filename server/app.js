@@ -279,11 +279,18 @@ app.post("/api/suppliers", async (req, res) => {
 app.post("/api/suppliers/:id/adjust", async (req, res) => {
   const supplierId = Number(req.params.id);
   const { kind, amount, note } = req.body || {};
-  const amt = toNumber(amount);
+  const rawAmt = toNumber(amount);
 
-  if (!supplierId || !kind || !amt) {
+  if (!supplierId || !kind || Number.isNaN(rawAmt)) {
     return res.status(400).json({ error: "Invalid payload" });
   }
+
+  // Для "set" дозволяємо 0, для інших операцій сума має бути > 0
+  if (kind !== "set" && rawAmt <= 0) {
+    return res.status(400).json({ error: "Amount must be > 0" });
+  }
+
+  const amt = Math.abs(rawAmt);
 
   try {
     const currentRes = await query(
@@ -296,9 +303,15 @@ app.post("/api/suppliers/:id/adjust", async (req, res) => {
 
     let newBalance;
     if (kind === "set") {
-      newBalance = amt;
-    } else {
+      newBalance = rawAmt; // може бути 0 або від'ємне
+    } else if (kind === "payout") {
+      // Виплата постачальнику: ми платимо -> борг зменшується (баланс рухається до 0)
       newBalance = toNumber(currentRes.rows[0].balance) + amt;
+    } else if (kind === "payment") {
+      // Оплата від постачальника: він нам платить -> його борг зменшується
+      newBalance = toNumber(currentRes.rows[0].balance) - amt;
+    } else {
+      return res.status(400).json({ error: "Unknown adjustment kind" });
     }
 
     await query(

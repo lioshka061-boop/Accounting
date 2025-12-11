@@ -160,13 +160,24 @@ async function adjustSupplier() {
   const note = document.getElementById("adjust-note")?.value || "";
   const sign = document.getElementById("adjust-sign")?.value || "positive";
 
-  if (!supplierId || !kind || !amount || amount <= 0) {
-    alert("Оберіть постачальника та суму > 0");
+  if (!supplierId || !kind || Number.isNaN(amount)) {
+    alert("Оберіть постачальника та коректну суму");
     return;
   }
 
-  if (kind === "set" && sign === "negative") {
-    amount = -amount;
+  if (kind !== "set" && amount <= 0) {
+    alert("Для виплат/оплат сума має бути > 0");
+    return;
+  }
+
+  if (kind === "set") {
+    if (sign === "negative") {
+      amount = -Math.abs(amount);
+    } else {
+      amount = Math.abs(amount); // може бути 0
+    }
+  } else {
+    amount = Math.abs(amount);
   }
 
   const res = await fetch(`${API}/suppliers/${supplierId}/adjust`, {
@@ -194,6 +205,29 @@ async function deleteSupplier(id) {
     return;
   }
   showSuccess("Постачальника видалено");
+  loadSuppliers();
+}
+
+async function resetSupplierBalance() {
+  const supplierId = Number(document.getElementById("adjust-supplier")?.value);
+  if (!supplierId) {
+    alert("Оберіть постачальника");
+    return;
+  }
+
+  const res = await fetch(`${API}/suppliers/${supplierId}/adjust`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "set", amount: 0, note: "Обнулення балансу" })
+  });
+
+  if (!res.ok) {
+    alert("Не вдалось обнулити баланс");
+    return;
+  }
+  document.getElementById("adjust-amount").value = "";
+  document.getElementById("adjust-note").value = "";
+  showSuccess("Баланс обнулено");
   loadSuppliers();
 }
 
