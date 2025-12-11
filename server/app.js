@@ -318,11 +318,15 @@ app.post("/api/suppliers/:id/adjust", async (req, res) => {
       "UPDATE suppliers SET balance = $1 WHERE id = $2",
       [newBalance, supplierId]
     );
-
-    await query(
-      "INSERT INTO supplier_adjustments(supplier_id, kind, amount, note) VALUES($1,$2,$3,$4)",
-      [supplierId, kind, amt, note || ""]
-    );
+    // Пишемо історію, але якщо таблиця не підходить за схемою — не валимо запит.
+    try {
+      await query(
+        "INSERT INTO supplier_adjustments(supplier_id, kind, amount, note) VALUES($1,$2,$3,$4)",
+        [supplierId, kind, amt, note || ""]
+      );
+    } catch (historyErr) {
+      console.error("supplier_adjustments insert error (ignored):", historyErr);
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/suppliers/:id/adjust error:", err);
