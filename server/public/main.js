@@ -874,6 +874,7 @@ function renderCharts(series) {
   if (supTable) {
     supTable.innerHTML = "";
     suppliersPerf.forEach(s => {
+      const avgCheck = s.orders ? s.revenue / s.orders : 0;
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${s.name}</td>
@@ -881,6 +882,7 @@ function renderCharts(series) {
         <td>${MONEY(s.revenue)} ₴</td>
         <td>${MONEY(s.profit)} ₴</td>
         <td>${s.margin.toFixed(2)} %</td>
+        <td>${MONEY(avgCheck)} ₴</td>
       `;
       supTable.appendChild(tr);
     });
